@@ -3,6 +3,7 @@ from typing import Dict, List, Any, Optional
 import openai
 import json
 import uuid
+import os
 from datetime import datetime
 import asyncio
 import random
@@ -11,11 +12,19 @@ class AutoGenOrchestrator:
     """AutoGen orchestrator with LLM agents and deterministic tools"""
 
     def __init__(self):
+        # Set OpenAI API key from environment
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+
+        # Set the API key for openai client
+        openai.api_key = api_key
+
         self.llm_config = {
             "config_list": [
                 {
                     "model": "gpt-4",
-                    "api_key": openai.api_key,
+                    "api_key": api_key,
                 }
             ]
         }
