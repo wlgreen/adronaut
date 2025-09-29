@@ -63,9 +63,11 @@ async def test_autogen():
     """Test AutoGen import separately"""
     try:
         import autogen
-        return {"autogen": "✅", "version": autogen.__version__}
+        return {"autogen": "✅", "version": getattr(autogen, '__version__', 'unknown')}
     except ImportError as e:
         return {"autogen": "❌", "error": str(e)}
+    except Exception as e:
+        return {"autogen": "❌", "error": f"Other error: {str(e)}"}
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
