@@ -1,0 +1,23 @@
+campaign_id,ad_group_id,keyword,match_type,impressions,clicks,cost,conversions,conversion_value
+camp_001,ag_001,running shoes,exact,1250,45,67.50,3,450.00
+camp_001,ag_001,athletic shoes,broad,890,23,34.50,1,150.00
+camp_001,ag_002,sports footwear,phrase,1100,38,57.00,2,300.00
+camp_001,ag_002,workout shoes,exact,750,28,42.00,2,280.00
+camp_002,ag_003,fitness tracker,exact,2100,67,89.25,4,600.00
+camp_002,ag_003,smart watch,broad,1850,52,78.00,3,525.00
+camp_002,ag_004,activity monitor,phrase,1200,34,51.00,2,350.00
+camp_003,ag_005,protein powder,exact,1800,72,108.00,8,1200.00
+camp_003,ag_005,whey protein,broad,1500,48,72.00,5,750.00
+camp_003,ag_006,supplement,phrase,900,25,37.50,2,300.00
+camp_004,ag_007,gym membership,exact,650,18,54.00,1,200.00
+camp_004,ag_007,fitness classes,broad,820,22,66.00,1,150.00
+camp_004,ag_008,personal trainer,phrase,550,15,67.50,1,300.00
+camp_005,ag_009,yoga mat,exact,1100,42,63.00,4,240.00
+camp_005,ag_009,exercise equipment,broad,950,28,56.00,2,180.00
+camp_005,ag_010,home gym,phrase,1300,38,95.00,3,450.00
+camp_006,ag_011,sports nutrition,exact,1600,55,82.50,6,900.00
+camp_006,ag_011,energy drinks,broad,1400,35,52.50,3,225.00
+camp_006,ag_012,pre workout,phrase,1050,41,61.50,4,520.00
+camp_007,ag_013,running gear,exact,800,29,43.50,2,200.00
+camp_007,ag_013,athletic wear,broad,1200,36,54.00,3,270.00
+camp_007,ag_014,sports apparel,phrase,950,31,46.50,2,240.00

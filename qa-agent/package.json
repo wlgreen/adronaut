@@ -1,0 +1,42 @@
+{
+  "name": "qa-agent",
+  "version": "1.0.0",
+  "description": "QA Test Agent for Adronaut E2E testing",
+  "main": "index.js",
+  "scripts": {
+    "qa": "npm run db:reset && npm run test:e2e && npm run report:generate",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "report:open": "playwright show-report",
+    "report:generate": "node dist/agent/reporters/mdReporter.js",
+    "db:reset": "node dist/supabase/reset.js",
+    "db:seed": "node dist/supabase/seed.js",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "install:browsers": "npx playwright install",
+    "manual:check": "node scripts/manual-test.js full-check",
+    "manual:db": "node scripts/manual-test.js db-test",
+    "manual:env": "node scripts/manual-test.js env"
+  },
+  "keywords": ["qa", "e2e", "playwright", "testing", "automation"],
+  "author": "Adronaut QA Team",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.58.0",
+    "csv-parser": "^3.0.0",
+    "csv-writer": "^1.6.0",
+    "dotenv": "^16.4.5",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^20.14.0",
+    "@types/uuid": "^10.0.0",
+    "axe-playwright": "^2.0.1",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -5,7 +5,17 @@
       "Bash(npm install:*)",
       "Bash(curl:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Read(//Users/liangwang/**)",
+      "Bash(git push:*)",
+      "Bash(git remote add:*)",
+      "Bash(git remote remove:*)",
+      "Bash(gh repo create:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx next build:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npx playwright:*)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []
