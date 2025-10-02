@@ -30,6 +30,7 @@ async def root():
             "port": os.getenv("PORT", "8000"),
             "python_path": os.getenv("PYTHONPATH", "not set"),
             "has_openai_key": bool(os.getenv("OPENAI_API_KEY")),
+            "has_gemini_key": bool(os.getenv("GEMINI_API_KEY")),
             "has_supabase_url": bool(os.getenv("SUPABASE_URL")),
             "has_supabase_key": bool(os.getenv("SUPABASE_KEY")),
         }
@@ -43,13 +44,15 @@ async def health_check():
         import openai
         import supabase
         import pandas
+        import crewai
 
         return {
             "status": "healthy",
             "dependencies": {
                 "openai": "✅",
                 "supabase": "✅",
-                "pandas": "✅"
+                "pandas": "✅",
+                "crewai": "✅"
             }
         }
     except ImportError as e:
@@ -58,16 +61,23 @@ async def health_check():
             "error": str(e)
         }
 
-@app.get("/test-autogen")
-async def test_autogen():
-    """Test AutoGen import separately"""
+@app.get("/test-crewai")
+async def test_crewai():
+    """Test CrewAI import separately"""
     try:
-        import autogen
-        return {"autogen": "✅", "version": getattr(autogen, '__version__', 'unknown')}
+        import crewai
+        from crew_orchestrator import CrewAIOrchestrator
+        orchestrator = CrewAIOrchestrator()
+        return {
+            "crewai": "✅",
+            "version": getattr(crewai, '__version__', 'unknown'),
+            "gemini_configured": hasattr(orchestrator, 'use_gemini') and orchestrator.use_gemini,
+            "llm_type": type(orchestrator.llm).__name__
+        }
     except ImportError as e:
-        return {"autogen": "❌", "error": str(e)}
+        return {"crewai": "❌", "error": str(e)}
     except Exception as e:
-        return {"autogen": "❌", "error": f"Other error: {str(e)}"}
+        return {"crewai": "❌", "error": f"Other error: {str(e)}"}
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
