@@ -44,7 +44,7 @@ async def health_check():
         import openai
         import supabase
         import pandas
-        import crewai
+        import google.generativeai
 
         return {
             "status": "healthy",
@@ -52,7 +52,7 @@ async def health_check():
                 "openai": "✅",
                 "supabase": "✅",
                 "pandas": "✅",
-                "crewai": "✅"
+                "google_generativeai": "✅"
             }
         }
     except ImportError as e:
@@ -61,23 +61,21 @@ async def health_check():
             "error": str(e)
         }
 
-@app.get("/test-crewai")
-async def test_crewai():
-    """Test CrewAI import separately"""
+@app.get("/test-gemini")
+async def test_gemini():
+    """Test Gemini orchestrator"""
     try:
-        import crewai
-        from crew_orchestrator import CrewAIOrchestrator
-        orchestrator = CrewAIOrchestrator()
+        from gemini_orchestrator import GeminiOrchestrator
+        orchestrator = GeminiOrchestrator()
         return {
-            "crewai": "✅",
-            "version": getattr(crewai, '__version__', 'unknown'),
-            "gemini_configured": hasattr(orchestrator, 'use_gemini') and orchestrator.use_gemini,
-            "llm_type": type(orchestrator.llm).__name__
+            "gemini_orchestrator": "✅",
+            "use_gemini": getattr(orchestrator, 'use_gemini', False),
+            "model_configured": orchestrator.model is not None if orchestrator.use_gemini else "OpenAI fallback"
         }
     except ImportError as e:
-        return {"crewai": "❌", "error": str(e)}
+        return {"gemini_orchestrator": "❌", "error": str(e)}
     except Exception as e:
-        return {"crewai": "❌", "error": f"Other error: {str(e)}"}
+        return {"gemini_orchestrator": "❌", "error": f"Other error: {str(e)}"}
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))

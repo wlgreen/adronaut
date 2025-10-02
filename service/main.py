@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional
 import uuid
 from datetime import datetime
 
-from crew_orchestrator import CrewAIOrchestrator
+from gemini_orchestrator import GeminiOrchestrator as CrewAIOrchestrator
 from database import Database
 from file_processor import FileProcessor
 
