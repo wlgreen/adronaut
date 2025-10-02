@@ -87,8 +87,9 @@ class GeminiOrchestrator:
                 features_text = response.text
             else:
                 # OpenAI fallback
-                import openai
-                response = openai.ChatCompletion.create(
+                from openai import OpenAI
+                client = OpenAI(api_key=self.openai_api_key)
+                response = client.chat.completions.create(
                     model="gpt-4",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7
@@ -165,8 +166,9 @@ class GeminiOrchestrator:
                 insights_text = response.text
             else:
                 # OpenAI fallback
-                import openai
-                response = openai.ChatCompletion.create(
+                from openai import OpenAI
+                client = OpenAI(api_key=self.openai_api_key)
+                response = client.chat.completions.create(
                     model="gpt-4",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7
@@ -279,8 +281,9 @@ class GeminiOrchestrator:
                 brief_text = response.text
             else:
                 # OpenAI fallback
-                import openai
-                response = openai.ChatCompletion.create(
+                from openai import OpenAI
+                client = OpenAI(api_key=self.openai_api_key)
+                response = client.chat.completions.create(
                     model="gpt-4",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7
@@ -429,8 +432,9 @@ class GeminiOrchestrator:
                 edited_text = response.text
             else:
                 # OpenAI fallback
-                import openai
-                response = openai.ChatCompletion.create(
+                from openai import OpenAI
+                client = OpenAI(api_key=self.openai_api_key)
+                response = client.chat.completions.create(
                     model="gpt-4",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7

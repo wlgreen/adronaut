@@ -61,12 +61,15 @@ async def upload_file(
 ):
     """Upload and process a file artifact"""
     try:
+        # Ensure project exists in database
+        actual_project_id = await db.get_or_create_project(f"Project {project_id[:8]}")
+
         # Process the uploaded file
-        result = await file_processor.process_file(file, project_id)
+        result = await file_processor.process_file(file, actual_project_id)
 
         # Store artifact in database
         await db.create_artifact(
-            project_id=project_id,
+            project_id=actual_project_id,
             filename=file.filename,
             mime=file.content_type,
             storage_url=result["storage_url"],
@@ -75,9 +78,9 @@ async def upload_file(
 
         # Start background processing if this is the first file or triggers analysis
         if background_tasks:
-            background_tasks.add_task(start_analysis_workflow, project_id)
+            background_tasks.add_task(start_analysis_workflow, actual_project_id)
 
-        return {"success": True, "artifact_id": result["artifact_id"]}
+        return {"success": True, "artifact_id": result["artifact_id"], "project_id": actual_project_id}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -210,41 +213,44 @@ async def start_analysis_workflow(project_id: str):
 async def run_autogen_workflow(project_id: str, run_id: str):
     """Run the complete AutoGen workflow"""
     try:
+        # Ensure project exists in database
+        actual_project_id = await db.get_or_create_project(f"Project {project_id[:8]}")
+
         # Update run status
         active_runs[run_id] = {
-            "project_id": project_id,
+            "project_id": actual_project_id,
             "status": "running",
             "current_step": "INGEST",
             "events": []
         }
 
         # Log workflow start
-        await db.log_step_event(project_id, run_id, "WORKFLOW_START", "started")
+        await db.log_step_event(actual_project_id, run_id, "WORKFLOW_START", "started")
 
         # Step 1: INGEST - Get artifacts
-        artifacts = await db.get_artifacts(project_id)
+        artifacts = await db.get_artifacts(actual_project_id)
 
         # Step 2: FEATURES - Extract features
         active_runs[run_id]["current_step"] = "FEATURES"
-        await db.log_step_event(project_id, run_id, "FEATURES", "started")
+        await db.log_step_event(actual_project_id, run_id, "FEATURES", "started")
 
         features = await orchestrator.extract_features(artifacts)
 
         # Step 3: Store snapshot
-        snapshot_id = await db.create_snapshot(project_id, features)
-        await db.log_step_event(project_id, run_id, "FEATURES", "completed")
+        snapshot_id = await db.create_snapshot(actual_project_id, features)
+        await db.log_step_event(actual_project_id, run_id, "FEATURES", "completed")
 
         # Step 4: INSIGHTS - Generate insights
         active_runs[run_id]["current_step"] = "INSIGHTS"
-        await db.log_step_event(project_id, run_id, "INSIGHTS", "started")
+        await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "started")
 
         insights = await orchestrator.generate_insights(features)
-        await db.log_step_event(project_id, run_id, "INSIGHTS", "completed")
+        await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "completed")
 
         # Step 5: PATCH_PROPOSED - Create strategy patch
         active_runs[run_id]["current_step"] = "PATCH_PROPOSED"
         patch_id = await db.create_patch(
-            project_id=project_id,
+            project_id=actual_project_id,
             source="insights",
             patch_json=insights["patch"],
             justification=insights["justification"]
@@ -254,12 +260,14 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         active_runs[run_id]["status"] = "hitl_required"
         active_runs[run_id]["current_step"] = "HITL_PATCH"
 
-        await db.log_step_event(project_id, run_id, "PATCH_PROPOSED", "completed")
+        await db.log_step_event(actual_project_id, run_id, "PATCH_PROPOSED", "completed")
 
     except Exception as e:
         active_runs[run_id]["status"] = "failed"
         active_runs[run_id]["error"] = str(e)
-        await db.log_step_event(project_id, run_id, "WORKFLOW_ERROR", "failed")
+        # Use the actual_project_id if available, otherwise fallback to original project_id
+        project_id_for_error = active_runs[run_id].get("project_id", project_id)
+        await db.log_step_event(project_id_for_error, run_id, "WORKFLOW_ERROR", "failed")
 
 async def continue_autogen_workflow(project_id: str, patch_id: str, run_id: str):
     """Continue workflow after patch approval"""
