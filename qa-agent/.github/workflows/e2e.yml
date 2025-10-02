@@ -1,0 +1,219 @@
+name: E2E Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_edit_patch:
+        description: 'Enable edit patch testing'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      headed_mode:
+        description: 'Run tests in headed mode'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      matrix:
+        # Test against multiple Node.js versions
+        node-version: [18.x, 20.x]
+      fail-fast: false
+
+    env:
+      # Environment variables for testing
+      PAGE_BASE_URL: ${{ secrets.PAGE_BASE_URL || 'http://localhost:3000' }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL || secrets.PAGE_BASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PROJECT_NAME_UNDER_TEST: "QA-Test-CI-${{ github.run_id }}"
+      TEST_EDIT_PATCH: ${{ github.event.inputs.test_edit_patch || 'false' }}
+      HEADED: ${{ github.event.inputs.headed_mode || 'false' }}
+      CI: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Checkout both the QA agent and the web app
+          path: repo
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: |
+            repo/qa-agent/package-lock.json
+            repo/web/package-lock.json
+
+      - name: Install QA Agent dependencies
+        working-directory: repo/qa-agent
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Playwright browsers
+        working-directory: repo/qa-agent
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Web App dependencies
+        working-directory: repo/web
+        run: npm ci
+
+      - name: Build Web App
+        working-directory: repo/web
+        run: npm run build
+
+      - name: Start Web App in background
+        working-directory: repo/web
+        run: |
+          npm start &
+          echo $! > ../web-server.pid
+        env:
+          NODE_ENV: production
+
+      - name: Wait for Web App to be ready
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done'
+
+      - name: Validate environment
+        working-directory: repo/qa-agent
+        run: |
+          echo "🔧 Environment validation:"
+          echo "PAGE_BASE_URL: ${PAGE_BASE_URL}"
+          echo "SUPABASE_URL: ${SUPABASE_URL:0:30}..."
+          echo "PROJECT_NAME_UNDER_TEST: ${PROJECT_NAME_UNDER_TEST}"
+          echo "Node version: $(node --version)"
+          echo "NPM version: $(npm --version)"
+
+      - name: Run E2E tests
+        working-directory: repo/qa-agent
+        run: npm run test:e2e
+        env:
+          # Override timeouts for CI
+          PLAYWRIGHT_TIMEOUT: 300000  # 5 minutes per test
+
+      - name: Generate QA Report
+        working-directory: repo/qa-agent
+        run: npm run report:generate
+        if: always()
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-artifacts-node-${{ matrix.node-version }}
+          path: |
+            repo/qa-agent/artifacts/
+            repo/qa-agent/test-results/
+          retention-days: 7
+
+      - name: Upload Playwright HTML Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-node-${{ matrix.node-version }}
+          path: repo/qa-agent/artifacts/html-report/
+          retention-days: 7
+
+      - name: Upload QA Markdown Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-report-node-${{ matrix.node-version }}
+          path: repo/qa-agent/artifacts/qa-run-report.md
+          retention-days: 30
+
+      - name: Stop Web App
+        if: always()
+        run: |
+          if [ -f repo/web-server.pid ]; then
+            kill $(cat repo/web-server.pid) || true
+            rm repo/web-server.pid
+          fi
+
+      - name: Cleanup test data
+        working-directory: repo/qa-agent
+        run: npm run db:reset
+        if: always()
+        continue-on-error: true
+
+  # Aggregate results and notifications
+  report-results:
+    runs-on: ubuntu-latest
+    needs: e2e-tests
+    if: always()
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Generate summary report
+        run: |
+          echo "# E2E Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check if QA reports exist and display them
+          if find artifacts/ -name "qa-run-report.md" -type f | head -1 | xargs test -f; then
+            echo "## QA Report" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            find artifacts/ -name "qa-run-report.md" -type f | head -1 | xargs cat >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Results" >> $GITHUB_STEP_SUMMARY
+            echo "No QA reports found. Check individual test artifacts." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check test results
+        run: |
+          # Determine overall status
+          if [ "${{ needs.e2e-tests.result }}" == "success" ]; then
+            echo "✅ All E2E tests passed!"
+            exit 0
+          elif [ "${{ needs.e2e-tests.result }}" == "failure" ]; then
+            echo "❌ Some E2E tests failed!"
+            exit 1
+          else
+            echo "⚠️ E2E tests completed with issues!"
+            exit 1
+          fi
+
+  # Security scan (optional)
+  security-scan:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run security audit
+        working-directory: qa-agent
+        run: |
+          npm audit --audit-level moderate
+          # Don't fail on audit issues, just report
+        continue-on-error: true
