@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 from crewai import Agent, Task, Crew, Process
-from crewai.llm import LLM
 from langchain_google_genai import ChatGoogleGenerativeAI
 import google.generativeai as genai
 
