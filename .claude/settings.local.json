@@ -15,7 +15,9 @@
       "Bash(npx next build:*)",
       "Bash(npm run dev:*)",
       "Bash(npx playwright:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(python3:*)",
+      "Bash(pip3 install:*)"
     ],
     "deny": [],
     "ask": []

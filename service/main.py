@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional
 import uuid
 from datetime import datetime
 
-from orchestrator import AutoGenOrchestrator
+from crew_orchestrator import CrewAIOrchestrator
 from database import Database
 from file_processor import FileProcessor
 
@@ -33,7 +33,7 @@ app.add_middleware(
 
 # Global instances
 db = Database()
-orchestrator = AutoGenOrchestrator()
+orchestrator = CrewAIOrchestrator()
 file_processor = FileProcessor()
 
 # Store active runs for SSE
