@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 import uvicorn
 import os
 from dotenv import load_dotenv
@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional
 import uuid
 from datetime import datetime
 import logging
+import base64
 
 # Configure logging
 logging.basicConfig(
@@ -87,6 +88,8 @@ async def upload_file(
             filename=file.filename,
             mime=file.content_type,
             storage_url=result["storage_url"],
+            file_content=result.get("file_content"),
+            file_size=result.get("file_size"),
             summary_json=result.get("summary", {})
         )
         logger.info(f"✅ Artifact stored successfully")
@@ -180,6 +183,49 @@ async def continue_workflow(
 
     except Exception as e:
         logger.error(f"❌ Failed to process HITL decision: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/artifact/{artifact_id}/download")
+async def download_artifact(artifact_id: str):
+    """Download an artifact file"""
+    try:
+        logger.info(f"📥 Downloading artifact: {artifact_id}")
+
+        # Get artifact data from database
+        artifact = await db.get_artifact_content(artifact_id)
+        if not artifact:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+
+        file_content = artifact.get("file_content")
+        filename = artifact.get("filename", "unknown_file")
+        mime_type = artifact.get("mime", "application/octet-stream")
+
+        if not file_content:
+            raise HTTPException(status_code=404, detail="File content not found")
+
+        # Decode file content
+        try:
+            # Try base64 decode first
+            file_bytes = base64.b64decode(file_content)
+        except:
+            # If base64 decode fails, assume it's plain text
+            file_bytes = file_content.encode('utf-8')
+
+        logger.info(f"✅ Artifact downloaded: {filename} ({len(file_bytes)} bytes)")
+
+        return Response(
+            content=file_bytes,
+            media_type=mime_type,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Length": str(len(file_bytes))
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to download artifact: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/events/{run_id}")
