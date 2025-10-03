@@ -47,6 +47,41 @@ class Database:
         """Cleanup database connections"""
         self.client = None
 
+    async def _get_or_create_placeholder_strategy(self, project_id: str) -> str:
+        """Create or get a placeholder strategy for patches created before real strategy exists"""
+        if not self.client:
+            return str(uuid.uuid4())
+
+        try:
+            # Check if placeholder strategy already exists
+            result = self.client.table("strategy_versions")\
+                .select("strategy_id")\
+                .eq("project_id", project_id)\
+                .eq("version", 0)\
+                .execute()
+
+            if result.data:
+                return result.data[0]["strategy_id"]
+
+            # Create placeholder strategy
+            placeholder_strategy = {
+                "strategy_id": str(uuid.uuid4()),
+                "project_id": project_id,
+                "version": 0,
+                "strategy_json": {
+                    "type": "placeholder",
+                    "description": "Placeholder strategy for initial patches",
+                    "created_for": "pre-strategy patches"
+                }
+            }
+
+            result = self.client.table("strategy_versions").insert(placeholder_strategy).execute()
+            return result.data[0]["strategy_id"]
+
+        except Exception as e:
+            print(f"Database error in _get_or_create_placeholder_strategy: {e}")
+            return str(uuid.uuid4())
+
     # Project operations
     async def get_or_create_project(self, project_name: str = "Default Project") -> str:
         """Get or create a project (MVP uses single project)"""
@@ -235,6 +270,12 @@ class Database:
             return str(uuid.uuid4())
 
         try:
+            # For patches created before any strategy exists, use a placeholder strategy_id
+            if strategy_id is None:
+                # Create or get a placeholder strategy for this project
+                placeholder_strategy_id = await self._get_or_create_placeholder_strategy(project_id)
+                strategy_id = placeholder_strategy_id
+
             patch_data = {
                 "patch_id": str(uuid.uuid4()),
                 "project_id": project_id,
