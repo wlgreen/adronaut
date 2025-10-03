@@ -161,6 +161,7 @@ class Database:
             return artifact_id
 
         try:
+            # Ensure UUID is in proper format (not string)
             artifact_data = {
                 "artifact_id": artifact_id,
                 "project_id": project_id,
@@ -276,6 +277,7 @@ class Database:
             }
 
             result = self.client.table("strategies").insert(strategy_data).execute()
+            # Return the strategy_id we created, not the auto-generated id
             return result.data[0]["strategy_id"]
 
         except Exception as e:
