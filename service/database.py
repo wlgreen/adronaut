@@ -54,7 +54,7 @@ class Database:
 
         try:
             # Check if placeholder strategy already exists
-            result = self.client.table("strategy_versions")\
+            result = self.client.table("strategies")\
                 .select("strategy_id")\
                 .eq("project_id", project_id)\
                 .eq("version", 0)\
@@ -68,14 +68,14 @@ class Database:
                 "strategy_id": str(uuid.uuid4()),
                 "project_id": project_id,
                 "version": 0,
-                "strategy_json": {
+                "strategy_data": {
                     "type": "placeholder",
                     "description": "Placeholder strategy for initial patches",
                     "created_for": "pre-strategy patches"
                 }
             }
 
-            result = self.client.table("strategy_versions").insert(placeholder_strategy).execute()
+            result = self.client.table("strategies").insert(placeholder_strategy).execute()
             return result.data[0]["strategy_id"]
 
         except Exception as e:
@@ -197,7 +197,7 @@ class Database:
 
         try:
             # Get next version number
-            result = self.client.table("strategy_versions")\
+            result = self.client.table("strategies")\
                 .select("version")\
                 .eq("project_id", project_id)\
                 .order("version", desc=True)\
@@ -210,10 +210,10 @@ class Database:
                 "strategy_id": str(uuid.uuid4()),
                 "project_id": project_id,
                 "version": next_version,
-                "strategy_json": strategy_json
+                "strategy_data": strategy_json
             }
 
-            result = self.client.table("strategy_versions").insert(strategy_data).execute()
+            result = self.client.table("strategies").insert(strategy_data).execute()
             return result.data[0]["strategy_id"]
 
         except Exception as e:
@@ -244,12 +244,12 @@ class Database:
 
         try:
             result = self.client.table("strategy_active")\
-                .select("*, strategy_versions(*)")\
+                .select("*, strategies(*)")\
                 .eq("project_id", project_id)\
                 .execute()
 
             if result.data:
-                return result.data[0]["strategy_versions"]
+                return result.data[0]["strategies"]
             return None
 
         except Exception as e:
