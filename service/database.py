@@ -102,7 +102,7 @@ class Database:
             snapshot_data = {
                 "snapshot_id": str(uuid.uuid4()),
                 "project_id": project_id,
-                "result_json": result_json
+                "snapshot_data": result_json
             }
 
             result = self.client.table("analysis_snapshots").insert(snapshot_data).execute()
@@ -215,7 +215,7 @@ class Database:
                 "patch_id": str(uuid.uuid4()),
                 "project_id": project_id,
                 "source": source,
-                "patch_json": patch_json,
+                "patch_data": patch_json,
                 "justification": justification,
                 "status": "proposed"
             }

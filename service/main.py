@@ -286,7 +286,7 @@ async def continue_autogen_workflow(project_id: str, patch_id: str, run_id: str)
         active_runs[run_id]["current_step"] = "APPLY"
         await db.log_step_event(project_id, run_id, "APPLY", "started")
 
-        strategy = await orchestrator.apply_patch(project_id, patch["patch_json"])
+        strategy = await orchestrator.apply_patch(project_id, patch["patch_data"])
         strategy_id = await db.create_strategy_version(project_id, strategy)
         await db.set_active_strategy(project_id, strategy_id)
 
