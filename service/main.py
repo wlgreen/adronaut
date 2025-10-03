@@ -12,12 +12,28 @@ from datetime import datetime
 import logging
 import base64
 
-# Configure logging
+# Configure comprehensive logging with debug level for LLM interactions
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG if os.getenv("DEBUG_LLM", "false").lower() == "true" else logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Console output
+        logging.FileHandler('/tmp/adronaut_service.log', mode='a') if os.path.exists('/tmp') else logging.NullHandler()
+    ]
 )
+
+# Set specific loggers for detailed LLM debugging
 logger = logging.getLogger(__name__)
+gemini_logger = logging.getLogger('gemini_orchestrator')
+db_logger = logging.getLogger('database')
+
+# Enable DEBUG level for LLM interactions when DEBUG_LLM is set
+if os.getenv("DEBUG_LLM", "false").lower() == "true":
+    gemini_logger.setLevel(logging.DEBUG)
+    db_logger.setLevel(logging.DEBUG)
+    logger.info("🔍 DEBUG_LLM enabled - Full LLM request/response logging activated")
+else:
+    logger.info("ℹ️ Standard logging level - Set DEBUG_LLM=true for detailed LLM logging")
 
 from gemini_orchestrator import GeminiOrchestrator as CrewAIOrchestrator
 from database import Database
@@ -147,8 +163,23 @@ async def continue_workflow(
 
         if action == "edit" and edit_request:
             logger.info(f"✏️ Editing patch with LLM based on user request: {edit_request}")
+            logger.info(f"🤖 LLM REQUEST: Patch editing")
+            logger.info(f"   📝 Edit request: '{edit_request}'")
+            logger.info(f"   🔧 Original patch ID: {patch_id}")
+
             # Use LLM to edit the patch
             edited_patch = await orchestrator.edit_patch_with_llm(patch_id, edit_request)
+
+            logger.info(f"✅ LLM RESPONSE: Patch editing completed")
+            if isinstance(edited_patch, dict):
+                logger.info(f"📋 Edited patch summary:")
+                for key, value in edited_patch.items():
+                    if key == "error":
+                        logger.error(f"   ❌ {key}: {value}")
+                    elif isinstance(value, (list, dict)):
+                        logger.info(f"   ✓ {key}: {type(value).__name__} with {len(value)} items")
+                    else:
+                        logger.info(f"   ✓ {key}: {str(value)[:100]}...")
             await db.update_patch_status(patch_id, "superseded")
             logger.info(f"📝 Original patch marked as superseded: {patch_id}")
 
@@ -295,6 +326,11 @@ async def run_autogen_workflow(project_id: str, run_id: str):
     """Run the complete AutoGen workflow"""
     try:
         logger.info(f"🔄 [RUN {run_id[:8]}] Starting AutoGen workflow for project {project_id}")
+        logger.info(f"🎯 [RUN {run_id[:8]}] AI Provider: {'Gemini 2.5 Pro' if orchestrator.use_gemini else 'OpenAI GPT-4o'}")
+        logger.info(f"⚙️ [RUN {run_id[:8]}] Workflow configuration:")
+        logger.info(f"   - Database URL: {db.url[:50] if db.url else 'None'}...")
+        logger.info(f"   - Database connected: {db.client is not None}")
+        logger.info(f"   - Orchestrator type: {type(orchestrator).__name__}")
 
         # Ensure project exists in database
         actual_project_id = await db.get_or_create_project(f"Project {project_id[:8]}")
@@ -323,8 +359,25 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         active_runs[run_id]["current_step"] = "FEATURES"
         await db.log_step_event(actual_project_id, run_id, "FEATURES", "started")
 
+        logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Feature extraction")
+        logger.info(f"📊 [RUN {run_id[:8]}] Input data: {len(artifacts)} artifacts")
+        for i, artifact in enumerate(artifacts):
+            logger.info(f"   📄 Artifact {i+1}: {artifact.get('filename', 'unknown')} ({artifact.get('mime', 'unknown')} - {artifact.get('file_size', 0)} bytes)")
+
         features = await orchestrator.extract_features(artifacts)
-        logger.info(f"✅ [RUN {run_id[:8]}] Feature extraction completed successfully")
+
+        logger.info(f"✅ [RUN {run_id[:8]}] LLM RESPONSE: Feature extraction completed")
+        logger.info(f"📋 [RUN {run_id[:8]}] Extracted features summary:")
+        if isinstance(features, dict):
+            for key, value in features.items():
+                if key == "error":
+                    logger.error(f"   ❌ {key}: {value}")
+                elif isinstance(value, (list, dict)):
+                    logger.info(f"   ✓ {key}: {type(value).__name__} with {len(value)} items")
+                else:
+                    logger.info(f"   ✓ {key}: {str(value)[:100]}...")
+        else:
+            logger.warning(f"⚠️ [RUN {run_id[:8]}] Unexpected features format: {type(features)}")
 
         # Step 3: Store snapshot
         logger.info(f"💾 [RUN {run_id[:8]}] STEP 3: Storing analysis snapshot...")
@@ -337,20 +390,52 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         active_runs[run_id]["current_step"] = "INSIGHTS"
         await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "started")
 
+        logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Strategic insights generation")
+        logger.info(f"📊 [RUN {run_id[:8]}] Input: features from previous step")
+        if isinstance(features, dict):
+            logger.info(f"   📋 Features keys: {list(features.keys())}")
+
         insights = await orchestrator.generate_insights(features)
+
+        logger.info(f"✅ [RUN {run_id[:8]}] LLM RESPONSE: Strategic insights completed")
+        logger.info(f"🧠 [RUN {run_id[:8]}] Generated insights summary:")
+        if isinstance(insights, dict):
+            for key, value in insights.items():
+                if key == "error":
+                    logger.error(f"   ❌ {key}: {value}")
+                elif key == "patch":
+                    logger.info(f"   🔧 {key}: Strategy patch generated")
+                elif isinstance(value, (list, dict)):
+                    logger.info(f"   ✓ {key}: {type(value).__name__} with {len(value)} items")
+                else:
+                    logger.info(f"   ✓ {key}: {str(value)[:100]}...")
+
         await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "completed")
-        logger.info(f"🧠 [RUN {run_id[:8]}] Insights generation completed")
 
         # Step 5: PATCH_PROPOSED - Create strategy patch
         logger.info(f"📝 [RUN {run_id[:8]}] STEP 5: PATCH_PROPOSED - Creating strategy patch...")
         active_runs[run_id]["current_step"] = "PATCH_PROPOSED"
+
+        # Log patch details before storing
+        patch_data = insights.get("patch", {})
+        justification = insights.get("justification", "No justification provided")
+        logger.info(f"🔧 [RUN {run_id[:8]}] Patch details:")
+        logger.info(f"   📄 Justification: {justification[:200]}...")
+        if isinstance(patch_data, dict):
+            logger.info(f"   🛠️ Patch keys: {list(patch_data.keys())}")
+            for key, value in patch_data.items():
+                if isinstance(value, (dict, list)):
+                    logger.info(f"      - {key}: {type(value).__name__} with {len(value)} items")
+                else:
+                    logger.info(f"      - {key}: {str(value)[:100]}...")
+
         patch_id = await db.create_patch(
             project_id=actual_project_id,
             source="insights",
-            patch_json=insights["patch"],
-            justification=insights["justification"]
+            patch_json=patch_data,
+            justification=justification
         )
-        logger.info(f"📋 [RUN {run_id[:8]}] Strategy patch created: {patch_id}")
+        logger.info(f"📋 [RUN {run_id[:8]}] Strategy patch created and stored in database: {patch_id}")
 
         # Set status to require human intervention
         active_runs[run_id]["status"] = "hitl_required"
@@ -362,8 +447,16 @@ async def run_autogen_workflow(project_id: str, run_id: str):
 
     except Exception as e:
         logger.error(f"❌ [RUN {run_id[:8]}] Workflow failed: {str(e)}")
+        logger.error(f"🔍 [RUN {run_id[:8]}] Error details:")
+        logger.error(f"   - Error type: {type(e).__name__}")
+        logger.error(f"   - Error message: {str(e)}")
+        logger.error(f"   - Current step: {active_runs[run_id].get('current_step', 'unknown')}")
+        import traceback
+        logger.error(f"   - Traceback: {traceback.format_exc()}")
+
         active_runs[run_id]["status"] = "failed"
         active_runs[run_id]["error"] = str(e)
+        active_runs[run_id]["error_type"] = type(e).__name__
         # Use the actual_project_id if available, otherwise fallback to original project_id
         project_id_for_error = active_runs[run_id].get("project_id", project_id)
         await db.log_step_event(project_id_for_error, run_id, "WORKFLOW_ERROR", "failed")
@@ -433,8 +526,26 @@ async def continue_autogen_workflow(project_id: str, patch_id: str, run_id: str)
 
         logger.info(f"🔍 [RUN {run_id[:8]}] STEP 11: ANALYZE - Analyzing campaign performance...")
         active_runs[run_id]["current_step"] = "ANALYZE"
+
+        logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Performance analysis")
+        logger.info(f"   🎯 Campaign ID: {campaign_id}")
+
         analysis = await orchestrator.analyze_performance(campaign_id)
-        logger.info(f"📊 [RUN {run_id[:8]}] Performance analysis completed")
+
+        logger.info(f"✅ [RUN {run_id[:8]}] LLM RESPONSE: Performance analysis completed")
+        logger.info(f"📊 [RUN {run_id[:8]}] Analysis results:")
+        if isinstance(analysis, dict):
+            for key, value in analysis.items():
+                if key == "error":
+                    logger.error(f"   ❌ {key}: {value}")
+                elif key == "needs_adjustment":
+                    logger.info(f"   ⚠️ {key}: {value}")
+                elif key == "performance_summary":
+                    logger.info(f"   📈 {key}: {value}")
+                elif isinstance(value, (list, dict)):
+                    logger.info(f"   ✓ {key}: {type(value).__name__} with {len(value)} items")
+                else:
+                    logger.info(f"   ✓ {key}: {str(value)[:100]}...")
 
         # Step 12: REFLECTION_PATCH_PROPOSED - If issues detected
         if analysis.get("needs_adjustment"):
@@ -461,8 +572,18 @@ async def continue_autogen_workflow(project_id: str, patch_id: str, run_id: str)
 
     except Exception as e:
         logger.error(f"❌ [RUN {run_id[:8]}] Continue workflow failed: {str(e)}")
+        logger.error(f"🔍 [RUN {run_id[:8]}] Error details:")
+        logger.error(f"   - Error type: {type(e).__name__}")
+        logger.error(f"   - Error message: {str(e)}")
+        logger.error(f"   - Current step: {active_runs[run_id].get('current_step', 'unknown')}")
+        logger.error(f"   - Project ID: {project_id}")
+        logger.error(f"   - Patch ID: {patch_id}")
+        import traceback
+        logger.error(f"   - Traceback: {traceback.format_exc()}")
+
         active_runs[run_id]["status"] = "failed"
         active_runs[run_id]["error"] = str(e)
+        active_runs[run_id]["error_type"] = type(e).__name__
         await db.log_step_event(project_id, run_id, "WORKFLOW_ERROR", "failed")
         logger.error(f"🔥 [RUN {run_id[:8]}] Error logged to database")
 
