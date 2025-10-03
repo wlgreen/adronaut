@@ -1,7 +1,7 @@
 import aiofiles
 import os
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 import json
 from fastapi import UploadFile
 import PyPDF2
@@ -9,6 +9,7 @@ from PIL import Image
 import pandas as pd
 import io
 import numpy as np
+import base64
 
 class FileProcessor:
     """File processing and analysis utilities"""
@@ -62,6 +63,35 @@ class FileProcessor:
             except:
                 return f"<non-serializable {type(data).__name__}>"
 
+    async def _prepare_file_storage(self, content: bytes, mime_type: str, project_id: str, filename: str) -> Tuple[str, str]:
+        """Prepare file content for database storage"""
+        try:
+            # For text-based files, try to decode as UTF-8 and store as text
+            if mime_type.startswith('text/') or mime_type in ['application/json', 'application/csv']:
+                try:
+                    text_content = content.decode('utf-8')
+                    # Store as text directly for small files, base64 for large ones
+                    if len(text_content) < 50000:  # 50KB limit for direct text storage
+                        file_content = text_content
+                    else:
+                        file_content = base64.b64encode(content).decode('utf-8')
+                except UnicodeDecodeError:
+                    # Fall back to base64 if decode fails
+                    file_content = base64.b64encode(content).decode('utf-8')
+            else:
+                # For binary files, always use base64
+                file_content = base64.b64encode(content).decode('utf-8')
+
+            # Create storage URL reference
+            storage_url = f"db://artifacts/{project_id}/{filename}"
+
+            return file_content, storage_url
+
+        except Exception as e:
+            print(f"File storage preparation error: {e}")
+            # Fallback to base64 encoding
+            return base64.b64encode(content).decode('utf-8'), f"db://artifacts/{project_id}/{filename}"
+
     async def process_file(self, file: UploadFile, project_id: str) -> Dict[str, Any]:
         """Process uploaded file and extract summary information"""
         try:
@@ -71,17 +101,19 @@ class FileProcessor:
             temp_filename = f"{file_id}{file_extension}"
             temp_path = os.path.join(self.upload_dir, temp_filename)
 
-            # Save file temporarily
+            # Read file content into memory
+            content = await file.read()
+            file_size = len(content)
+
+            # Save file temporarily for processing
             async with aiofiles.open(temp_path, 'wb') as f:
-                content = await file.read()
                 await f.write(content)
 
             # Extract summary based on file type
             summary = await self._extract_summary(temp_path, file.content_type)
 
-            # In a real implementation, this would upload to Supabase Storage
-            # For MVP, we'll simulate storage URL
-            storage_url = f"storage://artifacts/{project_id}/{temp_filename}"
+            # Store file content and metadata
+            file_content_b64, storage_url = await self._prepare_file_storage(content, file.content_type, project_id, temp_filename)
 
             # Clean up temp file
             try:
@@ -92,6 +124,8 @@ class FileProcessor:
             return {
                 "artifact_id": file_id,
                 "storage_url": storage_url,
+                "file_content": file_content_b64,
+                "file_size": file_size,
                 "summary": self._serialize_data(summary)
             }
 
@@ -99,7 +133,9 @@ class FileProcessor:
             print(f"File processing error: {e}")
             return {
                 "artifact_id": str(uuid.uuid4()),
-                "storage_url": f"storage://artifacts/{project_id}/error",
+                "storage_url": f"db://artifacts/{project_id}/error",
+                "file_content": None,
+                "file_size": 0,
                 "summary": self._serialize_data({"error": str(e)})
             }
 

@@ -138,6 +138,8 @@ class Database:
         filename: str,
         mime: str,
         storage_url: str,
+        file_content: str = None,
+        file_size: int = None,
         summary_json: Dict[str, Any] = None
     ) -> str:
         """Create a new artifact record"""
@@ -151,6 +153,8 @@ class Database:
                 "filename": filename,
                 "mime": mime,
                 "storage_url": storage_url,
+                "file_content": file_content,
+                "file_size": file_size,
                 "summary_json": self._serialize_json_data(summary_json) or {}
             }
 
@@ -173,6 +177,21 @@ class Database:
         except Exception as e:
             print(f"Database error in get_artifacts: {e}")
             return []
+
+    async def get_artifact_content(self, artifact_id: str) -> Dict[str, Any]:
+        """Get specific artifact with its content"""
+        if not self.client:
+            return {}
+
+        try:
+            result = self.client.table("artifacts").select("*").eq("artifact_id", artifact_id).execute()
+            if result.data:
+                return result.data[0]
+            return {}
+
+        except Exception as e:
+            print(f"Database error in get_artifact_content: {e}")
+            return {}
 
     # Snapshot operations
     async def create_snapshot(self, project_id: str, result_json: Dict[str, Any]) -> str:
