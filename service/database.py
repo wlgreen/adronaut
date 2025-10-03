@@ -19,22 +19,46 @@ class Database:
         if data is None:
             return {}
 
+        try:
+            # Try direct JSON serialization first
+            import json
+            json.dumps(data)
+            return data
+        except (TypeError, ValueError):
+            pass
+
         if isinstance(data, dict):
             return {k: self._serialize_json_data(v) for k, v in data.items()}
-        elif isinstance(data, list):
+        elif isinstance(data, (list, tuple)):
             return [self._serialize_json_data(item) for item in data]
         elif isinstance(data, np.ndarray):
             return data.tolist()
-        elif hasattr(data, 'dtype') and 'object' in str(data.dtype):
-            # Handle pandas ObjectDType and similar
+        elif hasattr(data, 'dtype'):
+            # Handle pandas/numpy data types including ObjectDType
+            try:
+                if 'object' in str(data.dtype):
+                    return str(data)
+                elif 'int' in str(data.dtype):
+                    return int(data)
+                elif 'float' in str(data.dtype):
+                    return float(data)
+                else:
+                    return str(data)
+            except:
+                return str(data)
+        elif isinstance(data, (np.integer, np.floating, np.bool_)):
+            return data.item()
+        elif hasattr(data, '__dict__'):
+            # Handle objects with attributes
             try:
                 return str(data)
             except:
-                return None
-        elif isinstance(data, (np.integer, np.floating)):
-            return float(data)
+                return f"<{type(data).__name__} object>"
         else:
-            return data
+            try:
+                return str(data)
+            except:
+                return f"<non-serializable {type(data).__name__}>"
 
     async def connect(self):
         """Initialize Supabase client"""
@@ -68,11 +92,11 @@ class Database:
                 "strategy_id": str(uuid.uuid4()),
                 "project_id": project_id,
                 "version": 0,
-                "strategy_data": {
+                "strategy_data": self._serialize_json_data({
                     "type": "placeholder",
                     "description": "Placeholder strategy for initial patches",
                     "created_for": "pre-strategy patches"
-                }
+                })
             }
 
             result = self.client.table("strategies").insert(placeholder_strategy).execute()
@@ -160,7 +184,7 @@ class Database:
             snapshot_data = {
                 "id": str(uuid.uuid4()),
                 "project_id": project_id,
-                "snapshot_data": result_json
+                "snapshot_data": self._serialize_json_data(result_json)
             }
 
             result = self.client.table("analysis_snapshots").insert(snapshot_data).execute()
@@ -210,7 +234,7 @@ class Database:
                 "strategy_id": str(uuid.uuid4()),
                 "project_id": project_id,
                 "version": next_version,
-                "strategy_data": strategy_json
+                "strategy_data": self._serialize_json_data(strategy_json)
             }
 
             result = self.client.table("strategies").insert(strategy_data).execute()
@@ -281,7 +305,7 @@ class Database:
                 "project_id": project_id,
                 "strategy_id": strategy_id,
                 "source": source,
-                "patch_data": patch_json,
+                "patch_data": self._serialize_json_data(patch_json),
                 "justification": justification,
                 "status": "proposed"
             }
@@ -353,7 +377,7 @@ class Database:
             brief_data = {
                 "brief_id": str(uuid.uuid4()),
                 "strategy_id": strategy_id,
-                "brief_json": brief_json
+                "brief_json": self._serialize_json_data(brief_json)
             }
 
             result = self.client.table("briefs").insert(brief_data).execute()
@@ -379,7 +403,7 @@ class Database:
                 "campaign_id": str(uuid.uuid4()),
                 "project_id": project_id,
                 "strategy_id": strategy_id,
-                "policy_json": policy_json,
+                "policy_json": self._serialize_json_data(policy_json),
                 "status": "running"
             }
 
@@ -433,7 +457,7 @@ class Database:
                 "spend": spend,
                 "conversions": conversions,
                 "revenue": revenue,
-                "extra_json": extra_json or {}
+                "extra_json": self._serialize_json_data(extra_json) or {}
             }
 
             result = self.client.table("metrics").insert(metric_data).execute()

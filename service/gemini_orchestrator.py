@@ -97,10 +97,16 @@ class GeminiOrchestrator:
             """
 
             if self.use_gemini:
+                logger.info("🤖 Sending request to Gemini for feature extraction")
+                logger.debug(f"📝 Prompt length: {len(prompt)} characters")
                 response = self.model.generate_content(prompt)
                 features_text = response.text
+                logger.info(f"✅ Gemini response received - Length: {len(features_text)} characters")
+                logger.debug(f"🔍 Raw Gemini response: {features_text[:500]}...")
             else:
                 # OpenAI fallback
+                logger.info("🤖 Sending request to OpenAI GPT-4o for feature extraction")
+                logger.debug(f"📝 Prompt length: {len(prompt)} characters")
                 from openai import OpenAI
                 client = OpenAI(api_key=self.openai_api_key)
                 response = client.chat.completions.create(
@@ -109,11 +115,17 @@ class GeminiOrchestrator:
                     temperature=0.7
                 )
                 features_text = response.choices[0].message.content
+                logger.info(f"✅ OpenAI response received - Length: {len(features_text)} characters")
+                logger.debug(f"🔍 Raw OpenAI response: {features_text[:500]}...")
 
             # Try to parse JSON response
             try:
                 features = json.loads(features_text)
-            except json.JSONDecodeError:
+                logger.info("✅ Successfully parsed JSON response")
+                logger.debug(f"🔧 Parsed features keys: {list(features.keys())}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"⚠️ JSON parsing failed: {e}")
+                logger.warning(f"📄 Raw response that failed to parse: {features_text}")
                 # If JSON parsing fails, create a structured response
                 features = {
                     "target_audience": {"description": "Analysis pending"},
@@ -127,6 +139,7 @@ class GeminiOrchestrator:
                     "recommendations": [],
                     "raw_analysis": features_text
                 }
+                logger.info("🔧 Created fallback structured response")
 
             logger.info("Feature extraction completed successfully")
             return features
