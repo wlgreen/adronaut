@@ -31,10 +31,10 @@ class GeminiOrchestrator:
             logger.info("✅ Gemini API key found - Using Gemini API for orchestration")
             try:
                 genai.configure(api_key=self.gemini_api_key)
-                # Initialize Gemini model
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                # Initialize Gemini model - use the correct model name
+                self.model = genai.GenerativeModel('gemini-pro')
                 self.use_gemini = True
-                logger.info("✅ Gemini API successfully configured with model: gemini-1.5-flash")
+                logger.info("✅ Gemini API successfully configured with model: gemini-pro")
             except Exception as e:
                 logger.error(f"❌ Failed to configure Gemini API: {e}")
                 logger.info("🔄 Falling back to OpenAI API")
