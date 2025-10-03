@@ -130,15 +130,31 @@ class GeminiOrchestrator:
 
             if self.use_gemini:
                 logger.info("🤖 Sending request to Gemini for feature extraction")
-                logger.debug(f"📝 Prompt length: {len(prompt)} characters")
+                logger.info(f"📝 Request Details:")
+                logger.info(f"   - Model: gemini-2.5-pro")
+                logger.info(f"   - Prompt length: {len(prompt)} characters")
+                logger.info(f"   - Artifacts count: {len(artifacts)}")
+                logger.debug(f"📨 Full prompt:\n{prompt}")
+
                 response = self.model.generate_content(prompt)
                 features_text = response.text
-                logger.info(f"✅ Gemini response received - Length: {len(features_text)} characters")
-                logger.debug(f"🔍 Raw Gemini response: {features_text[:500]}...")
+
+                logger.info(f"✅ Gemini response received")
+                logger.info(f"📤 Response Details:")
+                logger.info(f"   - Response length: {len(features_text)} characters")
+                logger.info(f"   - Response type: {type(response).__name__}")
+                logger.debug(f"📋 Full response:\n{features_text}")
+                logger.info(f"🔍 Response preview: {features_text[:200]}...")
             else:
                 # OpenAI fallback
                 logger.info("🤖 Sending request to OpenAI GPT-4o for feature extraction")
-                logger.debug(f"📝 Prompt length: {len(prompt)} characters")
+                logger.info(f"📝 Request Details:")
+                logger.info(f"   - Model: gpt-4o")
+                logger.info(f"   - Prompt length: {len(prompt)} characters")
+                logger.info(f"   - Temperature: 0.7")
+                logger.info(f"   - Artifacts count: {len(artifacts)}")
+                logger.debug(f"📨 Full prompt:\n{prompt}")
+
                 from openai import OpenAI
                 client = OpenAI(api_key=self.openai_api_key)
                 response = client.chat.completions.create(
@@ -147,17 +163,34 @@ class GeminiOrchestrator:
                     temperature=0.7
                 )
                 features_text = response.choices[0].message.content
-                logger.info(f"✅ OpenAI response received - Length: {len(features_text)} characters")
-                logger.debug(f"🔍 Raw OpenAI response: {features_text[:500]}...")
+
+                logger.info(f"✅ OpenAI response received")
+                logger.info(f"📤 Response Details:")
+                logger.info(f"   - Response length: {len(features_text)} characters")
+                logger.info(f"   - Usage: {response.usage if hasattr(response, 'usage') else 'N/A'}")
+                logger.info(f"   - Model: {response.model if hasattr(response, 'model') else 'gpt-4o'}")
+                logger.debug(f"📋 Full response:\n{features_text}")
+                logger.info(f"🔍 Response preview: {features_text[:200]}...")
 
             # Try to parse JSON response
             try:
                 features = json.loads(features_text)
                 logger.info("✅ Successfully parsed JSON response")
-                logger.debug(f"🔧 Parsed features keys: {list(features.keys())}")
+                logger.info(f"🔧 Parsed features structure:")
+                for key, value in features.items():
+                    if isinstance(value, (dict, list)):
+                        logger.info(f"   - {key}: {type(value).__name__} with {len(value)} items")
+                    else:
+                        logger.info(f"   - {key}: {type(value).__name__} = '{str(value)[:50]}...'")
+                logger.debug(f"📊 Full parsed features:\n{json.dumps(features, indent=2)}")
             except json.JSONDecodeError as e:
-                logger.warning(f"⚠️ JSON parsing failed: {e}")
-                logger.warning(f"📄 Raw response that failed to parse: {features_text}")
+                logger.error(f"❌ JSON parsing failed: {e}")
+                logger.error(f"📄 Full raw response that failed to parse:\n{features_text}")
+                logger.error(f"🔍 Response analysis:")
+                logger.error(f"   - Length: {len(features_text)}")
+                logger.error(f"   - Starts with: '{features_text[:50]}'")
+                logger.error(f"   - Ends with: '{features_text[-50:]}'")
+                logger.error(f"   - Contains JSON markers: {'{' in features_text and '}' in features_text}")
                 # If JSON parsing fails, create a structured response
                 features = {
                     "target_audience": {"description": "Analysis pending"},
@@ -221,10 +254,27 @@ class GeminiOrchestrator:
             """
 
             if self.use_gemini:
+                logger.info("🤖 Sending insights request to Gemini")
+                logger.info(f"📝 Request Details:")
+                logger.info(f"   - Model: gemini-2.5-pro")
+                logger.info(f"   - Prompt length: {len(prompt)} characters")
+                logger.debug(f"📨 Full insights prompt:\n{prompt}")
+
                 response = self.model.generate_content(prompt)
                 insights_text = response.text
+
+                logger.info(f"✅ Gemini insights response received")
+                logger.info(f"📤 Response length: {len(insights_text)} characters")
+                logger.debug(f"📋 Full insights response:\n{insights_text}")
+                logger.info(f"🔍 Insights preview: {insights_text[:200]}...")
             else:
                 # OpenAI fallback
+                logger.info("🤖 Sending insights request to OpenAI GPT-4o")
+                logger.info(f"📝 Request Details:")
+                logger.info(f"   - Model: gpt-4o")
+                logger.info(f"   - Prompt length: {len(prompt)} characters")
+                logger.debug(f"📨 Full insights prompt:\n{prompt}")
+
                 from openai import OpenAI
                 client = OpenAI(api_key=self.openai_api_key)
                 response = client.chat.completions.create(
@@ -234,10 +284,25 @@ class GeminiOrchestrator:
                 )
                 insights_text = response.choices[0].message.content
 
+                logger.info(f"✅ OpenAI insights response received")
+                logger.info(f"📤 Response length: {len(insights_text)} characters")
+                logger.debug(f"📋 Full insights response:\n{insights_text}")
+                logger.info(f"🔍 Insights preview: {insights_text[:200]}...")
+
             # Try to parse JSON response
             try:
                 insights = json.loads(insights_text)
-            except json.JSONDecodeError:
+                logger.info("✅ Successfully parsed insights JSON response")
+                logger.info(f"🔧 Insights structure:")
+                for key, value in insights.items():
+                    if isinstance(value, (dict, list)):
+                        logger.info(f"   - {key}: {type(value).__name__} with {len(value)} items")
+                    else:
+                        logger.info(f"   - {key}: {type(value).__name__}")
+                logger.debug(f"📊 Full parsed insights:\n{json.dumps(insights, indent=2)}")
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Insights JSON parsing failed: {e}")
+                logger.error(f"📄 Full insights response that failed to parse:\n{insights_text}")
                 # If JSON parsing fails, create a structured response
                 insights = {
                     "opportunities": ["Strategic analysis pending"],
@@ -336,10 +401,27 @@ class GeminiOrchestrator:
             """
 
             if self.use_gemini:
+                logger.info("🤖 Sending brief compilation request to Gemini")
+                logger.info(f"📝 Request Details:")
+                logger.info(f"   - Model: gemini-2.5-pro")
+                logger.info(f"   - Prompt length: {len(prompt)} characters")
+                logger.debug(f"📨 Full brief prompt:\n{prompt}")
+
                 response = self.model.generate_content(prompt)
                 brief_text = response.text
+
+                logger.info(f"✅ Gemini brief response received")
+                logger.info(f"📤 Response length: {len(brief_text)} characters")
+                logger.debug(f"📋 Full brief response:\n{brief_text}")
+                logger.info(f"🔍 Brief preview: {brief_text[:200]}...")
             else:
                 # OpenAI fallback
+                logger.info("🤖 Sending brief compilation request to OpenAI GPT-4o")
+                logger.info(f"📝 Request Details:")
+                logger.info(f"   - Model: gpt-4o")
+                logger.info(f"   - Prompt length: {len(prompt)} characters")
+                logger.debug(f"📨 Full brief prompt:\n{prompt}")
+
                 from openai import OpenAI
                 client = OpenAI(api_key=self.openai_api_key)
                 response = client.chat.completions.create(
@@ -349,10 +431,25 @@ class GeminiOrchestrator:
                 )
                 brief_text = response.choices[0].message.content
 
+                logger.info(f"✅ OpenAI brief response received")
+                logger.info(f"📤 Response length: {len(brief_text)} characters")
+                logger.debug(f"📋 Full brief response:\n{brief_text}")
+                logger.info(f"🔍 Brief preview: {brief_text[:200]}...")
+
             # Try to parse JSON response
             try:
                 brief = json.loads(brief_text)
-            except json.JSONDecodeError:
+                logger.info("✅ Successfully parsed brief JSON response")
+                logger.info(f"🔧 Brief structure:")
+                for key, value in brief.items():
+                    if isinstance(value, (dict, list)):
+                        logger.info(f"   - {key}: {type(value).__name__} with {len(value)} items")
+                    else:
+                        logger.info(f"   - {key}: {type(value).__name__}")
+                logger.debug(f"📊 Full parsed brief:\n{json.dumps(brief, indent=2)}")
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Brief JSON parsing failed: {e}")
+                logger.error(f"📄 Full brief response that failed to parse:\n{brief_text}")
                 # If JSON parsing fails, create a basic brief
                 brief = {
                     "executive_summary": "Marketing brief compilation in progress",
@@ -487,10 +584,29 @@ class GeminiOrchestrator:
             """
 
             if self.use_gemini:
+                logger.info(f"🤖 Sending patch edit request to Gemini for patch {patch_id}")
+                logger.info(f"📝 Request Details:")
+                logger.info(f"   - Model: gemini-2.5-pro")
+                logger.info(f"   - Edit request: '{edit_request}'")
+                logger.info(f"   - Prompt length: {len(prompt)} characters")
+                logger.debug(f"📨 Full edit prompt:\n{prompt}")
+
                 response = self.model.generate_content(prompt)
                 edited_text = response.text
+
+                logger.info(f"✅ Gemini edit response received")
+                logger.info(f"📤 Response length: {len(edited_text)} characters")
+                logger.debug(f"📋 Full edit response:\n{edited_text}")
+                logger.info(f"🔍 Edit preview: {edited_text[:200]}...")
             else:
                 # OpenAI fallback
+                logger.info(f"🤖 Sending patch edit request to OpenAI GPT-4o for patch {patch_id}")
+                logger.info(f"📝 Request Details:")
+                logger.info(f"   - Model: gpt-4o")
+                logger.info(f"   - Edit request: '{edit_request}'")
+                logger.info(f"   - Prompt length: {len(prompt)} characters")
+                logger.debug(f"📨 Full edit prompt:\n{prompt}")
+
                 from openai import OpenAI
                 client = OpenAI(api_key=self.openai_api_key)
                 response = client.chat.completions.create(
@@ -500,10 +616,25 @@ class GeminiOrchestrator:
                 )
                 edited_text = response.choices[0].message.content
 
+                logger.info(f"✅ OpenAI edit response received")
+                logger.info(f"📤 Response length: {len(edited_text)} characters")
+                logger.debug(f"📋 Full edit response:\n{edited_text}")
+                logger.info(f"🔍 Edit preview: {edited_text[:200]}...")
+
             # Try to parse JSON response
             try:
                 edited_patch = json.loads(edited_text)
-            except json.JSONDecodeError:
+                logger.info("✅ Successfully parsed edited patch JSON response")
+                logger.info(f"🔧 Edited patch structure:")
+                for key, value in edited_patch.items():
+                    if isinstance(value, (dict, list)):
+                        logger.info(f"   - {key}: {type(value).__name__} with {len(value)} items")
+                    else:
+                        logger.info(f"   - {key}: {type(value).__name__}")
+                logger.debug(f"📊 Full parsed edited patch:\n{json.dumps(edited_patch, indent=2)}")
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Edited patch JSON parsing failed: {e}")
+                logger.error(f"📄 Full edit response that failed to parse:\n{edited_text}")
                 edited_patch = {
                     "updated_patch": {"status": "Edit in progress"},
                     "changes_made": ["Processing user feedback"],
