@@ -62,10 +62,16 @@ class Database:
 
     async def connect(self):
         """Initialize Supabase client"""
-        if self.url and self.key:
-            self.client = create_client(self.url, self.key)
+        if self.url and self.key and self.url != "dummy" and self.key != "dummy":
+            try:
+                self.client = create_client(self.url, self.key)
+                print(f"✅ Connected to Supabase: {self.url[:20]}...")
+            except Exception as e:
+                print(f"❌ Failed to connect to Supabase: {e}")
         else:
-            print("Warning: Supabase credentials not configured")
+            print("⚠️ Warning: Supabase credentials not configured - using mock mode")
+            print(f"SUPABASE_URL: {self.url}")
+            print(f"SUPABASE_KEY: {self.key[:10] if self.key else 'None'}...")
 
     async def disconnect(self):
         """Cleanup database connections"""
@@ -143,12 +149,20 @@ class Database:
         summary_json: Dict[str, Any] = None
     ) -> str:
         """Create a new artifact record"""
+        artifact_id = str(uuid.uuid4())
+
+        print(f"🔄 Attempting to create artifact: {filename}")
+        print(f"   Project ID: {project_id}")
+        print(f"   File size: {file_size} bytes")
+        print(f"   Content length: {len(file_content) if file_content else 0}")
+
         if not self.client:
-            return str(uuid.uuid4())
+            print(f"❌ No database client - returning mock artifact_id: {artifact_id}")
+            return artifact_id
 
         try:
             artifact_data = {
-                "artifact_id": str(uuid.uuid4()),
+                "artifact_id": artifact_id,
                 "project_id": project_id,
                 "filename": filename,
                 "mime": mime,
@@ -158,12 +172,17 @@ class Database:
                 "summary_json": self._serialize_json_data(summary_json) or {}
             }
 
+            print(f"📊 Inserting artifact data to database...")
             result = self.client.table("artifacts").insert(artifact_data).execute()
-            return result.data[0]["artifact_id"]
+            actual_id = result.data[0]["artifact_id"]
+            print(f"✅ Artifact successfully created in database: {actual_id}")
+            return actual_id
 
         except Exception as e:
-            print(f"Database error in create_artifact: {e}")
-            return str(uuid.uuid4())
+            print(f"❌ Database error in create_artifact: {e}")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"   Returning mock artifact_id: {artifact_id}")
+            return artifact_id
 
     async def get_artifacts(self, project_id: str) -> List[Dict[str, Any]]:
         """Get all artifacts for a project"""
