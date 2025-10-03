@@ -4,6 +4,7 @@ from typing import Dict, List, Any, Optional
 import uuid
 from datetime import datetime
 import json
+import numpy as np
 
 class Database:
     """Database handler for Supabase operations"""
@@ -12,6 +13,28 @@ class Database:
         self.url = os.getenv("SUPABASE_URL")
         self.key = os.getenv("SUPABASE_KEY")
         self.client: Optional[Client] = None
+
+    def _serialize_json_data(self, data: Any) -> Any:
+        """Convert non-serializable data types to JSON-serializable format"""
+        if data is None:
+            return {}
+
+        if isinstance(data, dict):
+            return {k: self._serialize_json_data(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self._serialize_json_data(item) for item in data]
+        elif isinstance(data, np.ndarray):
+            return data.tolist()
+        elif hasattr(data, 'dtype') and 'object' in str(data.dtype):
+            # Handle pandas ObjectDType and similar
+            try:
+                return str(data)
+            except:
+                return None
+        elif isinstance(data, (np.integer, np.floating)):
+            return float(data)
+        else:
+            return data
 
     async def connect(self):
         """Initialize Supabase client"""
@@ -69,7 +92,7 @@ class Database:
                 "filename": filename,
                 "mime": mime,
                 "storage_url": storage_url,
-                "summary_json": summary_json or {}
+                "summary_json": self._serialize_json_data(summary_json) or {}
             }
 
             result = self.client.table("artifacts").insert(artifact_data).execute()
@@ -100,13 +123,13 @@ class Database:
 
         try:
             snapshot_data = {
-                "snapshot_id": str(uuid.uuid4()),
+                "id": str(uuid.uuid4()),
                 "project_id": project_id,
                 "snapshot_data": result_json
             }
 
             result = self.client.table("analysis_snapshots").insert(snapshot_data).execute()
-            return result.data[0]["snapshot_id"]
+            return result.data[0]["id"]
 
         except Exception as e:
             print(f"Database error in create_snapshot: {e}")
@@ -204,7 +227,8 @@ class Database:
         project_id: str,
         source: str,
         patch_json: Dict[str, Any],
-        justification: str
+        justification: str,
+        strategy_id: Optional[str] = None
     ) -> str:
         """Create a new strategy patch"""
         if not self.client:
@@ -214,6 +238,7 @@ class Database:
             patch_data = {
                 "patch_id": str(uuid.uuid4()),
                 "project_id": project_id,
+                "strategy_id": strategy_id,
                 "source": source,
                 "patch_data": patch_json,
                 "justification": justification,
