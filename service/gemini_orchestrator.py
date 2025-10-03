@@ -28,18 +28,32 @@ class GeminiOrchestrator:
 
         # Initialize LLM - prefer Gemini
         if self.gemini_api_key:
-            logger.info("Using Gemini API for orchestration")
-            genai.configure(api_key=self.gemini_api_key)
-
-            # Initialize Gemini model
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
-            self.use_gemini = True
+            logger.info("✅ Gemini API key found - Using Gemini API for orchestration")
+            try:
+                genai.configure(api_key=self.gemini_api_key)
+                # Initialize Gemini model
+                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                self.use_gemini = True
+                logger.info("✅ Gemini API successfully configured with model: gemini-1.5-flash")
+            except Exception as e:
+                logger.error(f"❌ Failed to configure Gemini API: {e}")
+                logger.info("🔄 Falling back to OpenAI API")
+                import openai
+                openai.api_key = self.openai_api_key
+                self.model = None
+                self.use_gemini = False
         else:
-            logger.info("Using OpenAI API for orchestration")
+            logger.info("❌ Gemini API key not available - Using OpenAI API for orchestration")
             import openai
             openai.api_key = self.openai_api_key
             self.model = None
             self.use_gemini = False
+
+        # Log final configuration
+        if self.use_gemini:
+            logger.info("🤖 AI Provider: Google Gemini (Primary)")
+        else:
+            logger.info("🤖 AI Provider: OpenAI GPT-4o (Fallback)")
 
     async def extract_features(self, artifacts: List[Dict]) -> Dict[str, Any]:
         """Extract marketing features from uploaded artifacts"""
@@ -90,7 +104,7 @@ class GeminiOrchestrator:
                 from openai import OpenAI
                 client = OpenAI(api_key=self.openai_api_key)
                 response = client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-4o",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7
                 )
@@ -169,7 +183,7 @@ class GeminiOrchestrator:
                 from openai import OpenAI
                 client = OpenAI(api_key=self.openai_api_key)
                 response = client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-4o",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7
                 )
@@ -284,7 +298,7 @@ class GeminiOrchestrator:
                 from openai import OpenAI
                 client = OpenAI(api_key=self.openai_api_key)
                 response = client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-4o",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7
                 )
@@ -435,7 +449,7 @@ class GeminiOrchestrator:
                 from openai import OpenAI
                 client = OpenAI(api_key=self.openai_api_key)
                 response = client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-4o",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7
                 )
