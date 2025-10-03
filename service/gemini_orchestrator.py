@@ -59,20 +59,50 @@ class GeminiOrchestrator:
         """Extract marketing features from uploaded artifacts"""
         try:
             logger.info("Starting feature extraction")
+            logger.info(f"📊 Received {len(artifacts)} artifacts for analysis")
 
             # Prepare artifact summaries for analysis
             artifact_summaries = []
-            for artifact in artifacts:
+            for i, artifact in enumerate(artifacts):
                 summary = {
-                    "filename": artifact.get("filename", ""),
-                    "summary": artifact.get("summary_json", {})
+                    "filename": artifact.get("filename", f"artifact_{i+1}"),
+                    "summary": artifact.get("summary_json", {}),
+                    "mime_type": artifact.get("mime", ""),
+                    "storage_url": artifact.get("storage_url", "")
                 }
                 artifact_summaries.append(summary)
+                logger.debug(f"📄 Artifact {i+1}: {summary['filename']} - Summary length: {len(str(summary['summary']))}")
+
+            # Check if we have meaningful data to analyze
+            if not artifacts or all(not artifact.get("summary_json") for artifact in artifacts):
+                logger.warning("⚠️ No artifacts or summaries provided - creating placeholder analysis")
+                return {
+                    "target_audience": {"description": "No artifacts provided for analysis"},
+                    "brand_positioning": "Unable to analyze - no marketing artifacts uploaded",
+                    "channels": [],
+                    "messaging": ["Please upload marketing artifacts for analysis"],
+                    "objectives": [],
+                    "budget_insights": {"status": "No data available"},
+                    "metrics": {"status": "No data available"},
+                    "competitive_insights": [],
+                    "recommendations": [
+                        "Please upload marketing artifacts such as:",
+                        "- Campaign briefs and strategy documents",
+                        "- Ad copy and creative assets",
+                        "- Performance reports and analytics",
+                        "- Market research documents",
+                        "- Website content and landing pages"
+                    ]
+                }
 
             prompt = f"""
             As a Marketing Data Feature Extractor, analyze the following marketing artifacts and extract key insights:
 
-            Artifacts: {json.dumps(artifact_summaries, indent=2)}
+            Number of artifacts: {len(artifact_summaries)}
+
+            Artifacts Data: {json.dumps(artifact_summaries, indent=2)}
+
+            IMPORTANT: Even if the data is limited, provide your best analysis based on available information. Do not ask for more data.
 
             Extract the following marketing features:
             1. Target audience demographics
@@ -85,15 +115,17 @@ class GeminiOrchestrator:
             8. Competitive landscape insights
 
             Return your analysis as a JSON object with these keys:
-            - target_audience: object with demographic details
-            - brand_positioning: string describing positioning
-            - channels: array of marketing channels
-            - messaging: array of key themes
-            - objectives: array of campaign goals
-            - budget_insights: object with budget information
-            - metrics: object with performance data
-            - competitive_insights: array of competitor observations
-            - recommendations: array of improvement suggestions
+            - target_audience: object with demographic details (if data is limited, provide general assumptions)
+            - brand_positioning: string describing positioning (if unclear, provide "Not clearly defined" or general observation)
+            - channels: array of marketing channels (even if none mentioned, suggest likely channels)
+            - messaging: array of key themes (extract any themes present or suggest typical ones)
+            - objectives: array of campaign goals (extract explicit goals or infer likely objectives)
+            - budget_insights: object with budget information (if none available, note "No budget data available")
+            - metrics: object with performance data (if none available, suggest relevant metrics to track)
+            - competitive_insights: array of competitor observations (if none available, provide general market insights)
+            - recommendations: array of improvement suggestions (always provide actionable recommendations)
+
+            MUST return valid JSON. Do not include any explanatory text outside the JSON structure.
             """
 
             if self.use_gemini:
