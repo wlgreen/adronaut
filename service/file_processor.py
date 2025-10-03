@@ -8,6 +8,7 @@ import PyPDF2
 from PIL import Image
 import pandas as pd
 import io
+import numpy as np
 
 class FileProcessor:
     """File processing and analysis utilities"""
@@ -15,6 +16,51 @@ class FileProcessor:
     def __init__(self):
         self.upload_dir = "temp_uploads"
         os.makedirs(self.upload_dir, exist_ok=True)
+
+    def _serialize_data(self, data: Any) -> Any:
+        """Convert non-serializable data types to JSON-serializable format"""
+        if data is None:
+            return None
+
+        try:
+            # Try direct JSON serialization first
+            json.dumps(data)
+            return data
+        except (TypeError, ValueError):
+            pass
+
+        if isinstance(data, dict):
+            return {k: self._serialize_data(v) for k, v in data.items()}
+        elif isinstance(data, (list, tuple)):
+            return [self._serialize_data(item) for item in data]
+        elif isinstance(data, np.ndarray):
+            return data.tolist()
+        elif hasattr(data, 'dtype'):
+            # Handle pandas/numpy data types
+            try:
+                if 'object' in str(data.dtype):
+                    return str(data)
+                elif 'int' in str(data.dtype):
+                    return int(data)
+                elif 'float' in str(data.dtype):
+                    return float(data)
+                else:
+                    return str(data)
+            except:
+                return str(data)
+        elif isinstance(data, (np.integer, np.floating, np.bool_)):
+            return data.item()
+        elif hasattr(data, '__dict__'):
+            # Handle objects with attributes
+            try:
+                return str(data)
+            except:
+                return f"<{type(data).__name__} object>"
+        else:
+            try:
+                return str(data)
+            except:
+                return f"<non-serializable {type(data).__name__}>"
 
     async def process_file(self, file: UploadFile, project_id: str) -> Dict[str, Any]:
         """Process uploaded file and extract summary information"""
@@ -46,7 +92,7 @@ class FileProcessor:
             return {
                 "artifact_id": file_id,
                 "storage_url": storage_url,
-                "summary": summary
+                "summary": self._serialize_data(summary)
             }
 
         except Exception as e:
@@ -54,7 +100,7 @@ class FileProcessor:
             return {
                 "artifact_id": str(uuid.uuid4()),
                 "storage_url": f"storage://artifacts/{project_id}/error",
-                "summary": {"error": str(e)}
+                "summary": self._serialize_data({"error": str(e)})
             }
 
     async def _extract_summary(self, file_path: str, mime_type: str) -> Dict[str, Any]:
@@ -84,7 +130,7 @@ class FileProcessor:
                 "rows": len(df),
                 "columns": list(df.columns),
                 "column_count": len(df.columns),
-                "data_types": df.dtypes.to_dict(),
+                "data_types": {col: str(dtype) for col, dtype in df.dtypes.to_dict().items()},
                 "sample_data": df.head(3).to_dict('records') if len(df) > 0 else [],
                 "marketing_insights": {}
             }
@@ -109,7 +155,13 @@ class FileProcessor:
             # Basic statistics for numeric columns
             numeric_cols = df.select_dtypes(include=['number']).columns
             if len(numeric_cols) > 0:
-                summary["marketing_insights"]["numeric_summary"] = df[numeric_cols].describe().to_dict()
+                numeric_summary = df[numeric_cols].describe().to_dict()
+                # Convert numpy types to Python types
+                summary["marketing_insights"]["numeric_summary"] = {
+                    col: {stat: float(val) if pd.notna(val) else None
+                          for stat, val in stats.items()}
+                    for col, stats in numeric_summary.items()
+                }
 
             return summary
 
