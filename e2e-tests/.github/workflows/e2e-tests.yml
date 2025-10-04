@@ -1,0 +1,376 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run nightly tests at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      test_env:
+        description: 'Test environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      test_suite:
+        description: 'Test suite to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - critical
+          - smoke
+          - performance
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Health check job to verify services are running
+  health-check:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend_healthy: ${{ steps.health.outputs.frontend_healthy }}
+      backend_healthy: ${{ steps.health.outputs.backend_healthy }}
+    steps:
+      - name: Check Frontend Health
+        id: health
+        run: |
+          if curl -f -s ${{ vars.FRONTEND_URL || 'http://localhost:3000' }} > /dev/null; then
+            echo "frontend_healthy=true" >> $GITHUB_OUTPUT
+          else
+            echo "frontend_healthy=false" >> $GITHUB_OUTPUT
+          fi
+
+          if curl -f -s ${{ vars.BACKEND_URL || 'http://localhost:8000' }} > /dev/null; then
+            echo "backend_healthy=true" >> $GITHUB_OUTPUT
+          else
+            echo "backend_healthy=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Setup test environment
+  setup:
+    runs-on: ubuntu-latest
+    needs: health-check
+    if: needs.health-check.outputs.frontend_healthy == 'true' && needs.health-check.outputs.backend_healthy == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: e2e-tests/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: e2e-tests
+        run: |
+          npm ci
+          npx playwright install chromium firefox webkit
+          npx playwright install-deps
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e-tests/package-lock.json') }}
+
+  # Critical path tests (always run)
+  critical-tests:
+    runs-on: ubuntu-latest
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      TEST_ENV: ${{ github.event.inputs.test_env || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: e2e-tests/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: e2e-tests
+        run: |
+          npm ci
+          npx playwright install ${{ matrix.browser }}
+
+      - name: Setup test environment
+        working-directory: e2e-tests
+        run: |
+          cp .env.${{ env.TEST_ENV }} .env.local
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Run critical tests
+        working-directory: e2e-tests
+        run: |
+          npx playwright test --project=${{ matrix.browser }} --grep="@critical" --reporter=html,junit,json
+        env:
+          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: critical-test-results-${{ matrix.browser }}
+          path: |
+            e2e-tests/test-results/
+            e2e-tests/playwright-report/
+          retention-days: 7
+
+  # Smoke tests (quick validation)
+  smoke-tests:
+    runs-on: ubuntu-latest
+    needs: setup
+    if: github.event.inputs.test_suite == 'smoke' || github.event.inputs.test_suite == 'all'
+    env:
+      TEST_ENV: ${{ github.event.inputs.test_env || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: e2e-tests/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: e2e-tests
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: Setup test environment
+        working-directory: e2e-tests
+        run: |
+          cp .env.${{ env.TEST_ENV }} .env.local
+
+      - name: Run smoke tests
+        working-directory: e2e-tests
+        run: |
+          npx playwright test --project=chromium --grep="@smoke" --reporter=line,json
+
+      - name: Upload smoke test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: smoke-test-results
+          path: e2e-tests/test-results/
+          retention-days: 3
+
+  # Performance tests (run on schedule or manual trigger)
+  performance-tests:
+    runs-on: ubuntu-latest
+    needs: setup
+    if: github.event_name == 'schedule' || github.event.inputs.test_suite == 'performance' || github.event.inputs.test_suite == 'all'
+    env:
+      TEST_ENV: ${{ github.event.inputs.test_env || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: e2e-tests/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: e2e-tests
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: Setup test environment
+        working-directory: e2e-tests
+        run: |
+          cp .env.${{ env.TEST_ENV }} .env.local
+
+      - name: Run performance tests
+        working-directory: e2e-tests
+        run: |
+          npx playwright test --project=performance --reporter=json
+        env:
+          # Performance test specific settings
+          MAX_PARALLEL_TESTS: 1
+          HEADLESS: true
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: performance-test-results
+          path: e2e-tests/test-results/
+          retention-days: 30
+
+      - name: Performance regression check
+        working-directory: e2e-tests
+        run: |
+          node scripts/performance-regression-check.js test-results/results.json
+
+  # Cross-browser compatibility tests
+  cross-browser-tests:
+    runs-on: ubuntu-latest
+    needs: critical-tests
+    if: github.event_name == 'pull_request' || github.event.inputs.test_suite == 'all'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        browser: [chromium, firefox, webkit]
+        exclude:
+          # Webkit only runs on macOS in GitHub Actions
+          - os: ubuntu-latest
+            browser: webkit
+          - os: windows-latest
+            browser: webkit
+    env:
+      TEST_ENV: ${{ github.event.inputs.test_env || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: e2e-tests/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: e2e-tests
+        run: |
+          npm ci
+          npx playwright install ${{ matrix.browser }}
+
+      - name: Run cross-browser tests
+        working-directory: e2e-tests
+        run: |
+          npx playwright test --project=${{ matrix.browser }} tests/01-complete-campaign-flow.spec.ts
+
+      - name: Upload cross-browser results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: cross-browser-${{ matrix.os }}-${{ matrix.browser }}
+          path: e2e-tests/test-results/
+          retention-days: 7
+
+  # Generate and publish test report
+  test-report:
+    runs-on: ubuntu-latest
+    needs: [critical-tests, smoke-tests, performance-tests]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: test-artifacts/
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Generate consolidated report
+        working-directory: e2e-tests
+        run: |
+          npm ci
+          node scripts/generate-test-report.js ../test-artifacts/
+
+      - name: Publish test report
+        uses: peaceiris/actions-gh-pages@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: e2e-tests/test-reports/
+          destination_dir: test-reports
+
+      - name: Comment PR with test results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = 'e2e-tests/test-reports/summary.md';
+
+            if (fs.existsSync(reportPath)) {
+              const report = fs.readFileSync(reportPath, 'utf8');
+
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## E2E Test Results\n\n${report}`
+              });
+            }
+
+  # Notify on failure
+  notify-failure:
+    runs-on: ubuntu-latest
+    needs: [critical-tests, smoke-tests, performance-tests]
+    if: failure() && (github.ref == 'refs/heads/main' || github.event_name == 'schedule')
+    steps:
+      - name: Notify Slack on failure
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: "E2E tests failed on ${{ github.ref }}"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Security and accessibility tests
+  security-tests:
+    runs-on: ubuntu-latest
+    needs: setup
+    if: github.event_name == 'pull_request' || github.event.inputs.test_suite == 'all'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: e2e-tests/package-lock.json
+
+      - name: Install dependencies with security tools
+        working-directory: e2e-tests
+        run: |
+          npm ci
+          npm install -D axe-playwright
+          npx playwright install chromium
+
+      - name: Run security and accessibility tests
+        working-directory: e2e-tests
+        run: |
+          npx playwright test tests/security/ --reporter=json
+
+      - name: Upload security test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-test-results
+          path: e2e-tests/test-results/
+          retention-days: 14

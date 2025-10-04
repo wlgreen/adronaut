@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(SUPABASE_URL=https://pszhibxfxefhguzqziqp.supabase.co SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzemhpYnhmeGVmaGd1enF6aXFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkxNzg1ODQsImV4cCI6MjA3NDc1NDU4NH0.bRQcjox8ZhyN0AMGB5njAAP2vLudzsc_3OwWOsg_5Ss python3 test_db.py)"
+      "Bash(SUPABASE_URL=https://pszhibxfxefhguzqziqp.supabase.co SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzemhpYnhmeGVmaGd1enF6aXFwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkxNzg1ODQsImV4cCI6MjA3NDc1NDU4NH0.bRQcjox8ZhyN0AMGB5njAAP2vLudzsc_3OwWOsg_5Ss python3 test_db.py)",
+      "Bash(node:*)",
+      "Bash(lsof:*)",
+      "Bash(python:*)",
+      "Bash(python3.9:*)",
+      "Read(//Library/Developer/CommandLineTools/usr/bin/**)",
+      "Bash(/Library/Developer/CommandLineTools/usr/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload)",
+      "Bash(chmod:*)",
+      "Bash(./manual-api-tests.sh:*)",
+      "Bash(./critical-path-tests.sh)",
+      "Bash(timeout:*)",
+      "Bash(./final-validation-tests.sh:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
