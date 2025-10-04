@@ -1,0 +1,40 @@
+{
+  "name": "adronaut-e2e-tests",
+  "version": "1.0.0",
+  "description": "End-to-end tests for Adronaut marketing automation platform",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "test:critical": "playwright test --grep @critical",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:performance": "playwright test tests/performance",
+    "test:cross-browser": "playwright test --project=chromium --project=firefox --project=webkit",
+    "install": "playwright install",
+    "install:deps": "playwright install-deps",
+    "setup": "npm run install && npm run install:deps"
+  },
+  "keywords": [
+    "playwright",
+    "e2e",
+    "testing",
+    "automation",
+    "adronaut"
+  ],
+  "author": "Adronaut Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "uuid": "^9.0.0",
+    "dotenv": "^16.0.0"
+  },
+  "dependencies": {
+    "form-data": "^4.0.0",
+    "ws": "^8.14.0"
+  }
+}

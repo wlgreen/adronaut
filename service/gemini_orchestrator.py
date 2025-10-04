@@ -7,6 +7,7 @@ import os
 import json
 import uuid
 import logging
+import re
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -17,6 +18,38 @@ logger = logging.getLogger(__name__)
 
 class GeminiOrchestrator:
     """Simple orchestrator using native Gemini API"""
+
+    def _extract_json_from_response(self, response_text: str) -> str:
+        """Extract JSON from response text, handling markdown code blocks"""
+        if not response_text:
+            return ""
+
+        # Try to extract JSON from markdown code blocks
+        json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+        matches = re.findall(json_pattern, response_text, re.DOTALL | re.IGNORECASE)
+
+        if matches:
+            # Return the first JSON match
+            json_text = matches[0].strip()
+            logger.debug(f"🔧 Extracted JSON from markdown: {len(json_text)} characters")
+            return json_text
+
+        # If no markdown blocks, check if the response is already clean JSON
+        stripped = response_text.strip()
+        if stripped.startswith('{') and stripped.endswith('}'):
+            logger.debug(f"🔧 Response appears to be clean JSON: {len(stripped)} characters")
+            return stripped
+
+        # If still no clean JSON, try to find JSON-like content
+        json_pattern_loose = r'\{.*\}'
+        match = re.search(json_pattern_loose, response_text, re.DOTALL)
+        if match:
+            json_text = match.group(0).strip()
+            logger.debug(f"🔧 Found JSON-like content: {len(json_text)} characters")
+            return json_text
+
+        logger.warning(f"⚠️ No JSON content found in response")
+        return ""
 
     def __init__(self):
         # Configure Gemini API
@@ -174,7 +207,12 @@ class GeminiOrchestrator:
 
             # Try to parse JSON response
             try:
-                features = json.loads(features_text)
+                # Extract JSON from response (handling markdown code blocks)
+                clean_json = self._extract_json_from_response(features_text)
+                if not clean_json:
+                    raise json.JSONDecodeError("No JSON content found", features_text, 0)
+
+                features = json.loads(clean_json)
                 logger.info("✅ Successfully parsed JSON response")
                 logger.info(f"🔧 Parsed features structure:")
                 for key, value in features.items():
@@ -291,7 +329,12 @@ class GeminiOrchestrator:
 
             # Try to parse JSON response
             try:
-                insights = json.loads(insights_text)
+                # Extract JSON from response (handling markdown code blocks)
+                clean_json = self._extract_json_from_response(insights_text)
+                if not clean_json:
+                    raise json.JSONDecodeError("No JSON content found", insights_text, 0)
+
+                insights = json.loads(clean_json)
                 logger.info("✅ Successfully parsed insights JSON response")
                 logger.info(f"🔧 Insights structure:")
                 for key, value in insights.items():
@@ -438,7 +481,12 @@ class GeminiOrchestrator:
 
             # Try to parse JSON response
             try:
-                brief = json.loads(brief_text)
+                # Extract JSON from response (handling markdown code blocks)
+                clean_json = self._extract_json_from_response(brief_text)
+                if not clean_json:
+                    raise json.JSONDecodeError("No JSON content found", brief_text, 0)
+
+                brief = json.loads(clean_json)
                 logger.info("✅ Successfully parsed brief JSON response")
                 logger.info(f"🔧 Brief structure:")
                 for key, value in brief.items():
@@ -623,7 +671,12 @@ class GeminiOrchestrator:
 
             # Try to parse JSON response
             try:
-                edited_patch = json.loads(edited_text)
+                # Extract JSON from response (handling markdown code blocks)
+                clean_json = self._extract_json_from_response(edited_text)
+                if not clean_json:
+                    raise json.JSONDecodeError("No JSON content found", edited_text, 0)
+
+                edited_patch = json.loads(clean_json)
                 logger.info("✅ Successfully parsed edited patch JSON response")
                 logger.info(f"🔧 Edited patch structure:")
                 for key, value in edited_patch.items():
