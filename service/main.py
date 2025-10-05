@@ -84,7 +84,7 @@ async def upload_file(
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = None
 ):
-    """Upload and process a file artifact"""
+    """Upload and process a file artifact (legacy method with DB storage)"""
     try:
         logger.info(f"📤 Starting file upload: {file.filename} for project {project_id[:8]}")
 
@@ -120,6 +120,93 @@ async def upload_file(
 
     except Exception as e:
         logger.error(f"❌ File upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/upload-direct")
+async def upload_file_direct(
+    project_id: str,
+    file: UploadFile = File(...),
+    process_immediately: bool = True
+):
+    """Upload and process file with direct LLM processing (faster, no DB roundtrip)"""
+    try:
+        logger.info(f"⚡ Starting DIRECT file upload: {file.filename} for project {project_id[:8]}")
+
+        # Ensure project exists in database
+        actual_project_id = await db.get_or_create_project(f"Project {project_id[:8]}")
+        logger.info(f"📁 Project ensured: {actual_project_id}")
+
+        # Extract content directly from file (no disk storage)
+        logger.info(f"🔍 Extracting content directly from memory: {file.filename} ({file.content_type})")
+        file_data = await file_processor.extract_content_direct(file)
+        logger.info(f"✅ Content extracted successfully - {file_data['file_size']} bytes")
+
+        if process_immediately:
+            # Process with LLM immediately (no DB read)
+            logger.info(f"🤖 Processing with LLM directly from memory...")
+            features = await orchestrator.extract_features_direct(file_data)
+            logger.info(f"✅ LLM processing completed successfully")
+
+            # Store artifact with features for future reference
+            logger.info(f"💾 Storing artifact with pre-computed features...")
+            artifact_id = str(uuid.uuid4())
+
+            # Prepare file storage (still store for later access)
+            file_content, storage_url = await file_processor._prepare_file_storage(
+                file_data["raw_content"],
+                file_data["content_type"],
+                actual_project_id,
+                file_data["filename"]
+            )
+
+            await db.create_artifact(
+                project_id=actual_project_id,
+                filename=file_data["filename"],
+                mime=file_data["content_type"],
+                storage_url=storage_url,
+                file_content=file_content,
+                file_size=file_data["file_size"],
+                summary_json=features  # Store the LLM-processed features
+            )
+            logger.info(f"✅ Artifact stored with pre-computed features")
+
+            return {
+                "success": True,
+                "artifact_id": artifact_id,
+                "project_id": actual_project_id,
+                "features": features,
+                "processing_time": "immediate",
+                "method": "direct_llm_processing"
+            }
+        else:
+            # Just store the file for later processing
+            artifact_id = str(uuid.uuid4())
+            file_content, storage_url = await file_processor._prepare_file_storage(
+                file_data["raw_content"],
+                file_data["content_type"],
+                actual_project_id,
+                file_data["filename"]
+            )
+
+            await db.create_artifact(
+                project_id=actual_project_id,
+                filename=file_data["filename"],
+                mime=file_data["content_type"],
+                storage_url=storage_url,
+                file_content=file_content,
+                file_size=file_data["file_size"],
+                summary_json={"extracted_content": file_data["extracted_content"][:1000]}
+            )
+
+            return {
+                "success": True,
+                "artifact_id": artifact_id,
+                "project_id": actual_project_id,
+                "method": "deferred_processing"
+            }
+
+    except Exception as e:
+        logger.error(f"❌ Direct file upload failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/autogen/run/start")

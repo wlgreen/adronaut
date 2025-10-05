@@ -262,6 +262,43 @@ class GeminiOrchestrator:
                 "recommendations": []
             }
 
+    async def extract_features_direct(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract marketing features directly from file content without DB roundtrip"""
+        try:
+            logger.info("Starting direct feature extraction from file content")
+            logger.info(f"📊 Processing file: {file_data.get('filename', 'unknown')}")
+
+            # Create artifact-like structure for analysis
+            artifact_data = {
+                "filename": file_data.get("filename", "uploaded_file"),
+                "summary_json": {
+                    "content_type": file_data.get("content_type", "unknown"),
+                    "file_size": file_data.get("file_size", 0),
+                    "extracted_content": file_data.get("extracted_content", "")[:5000],  # Limit content for prompt
+                    "processing_method": "direct_upload"
+                },
+                "mime": file_data.get("content_type", "unknown"),
+                "storage_url": f"memory://{file_data.get('filename', 'unknown')}"
+            }
+
+            # Use the existing extract_features method with our direct data
+            return await self.extract_features([artifact_data])
+
+        except Exception as e:
+            logger.error(f"Direct feature extraction failed: {e}")
+            return {
+                "error": str(e),
+                "target_audience": {"description": "Direct analysis failed"},
+                "brand_positioning": "Direct analysis failed",
+                "channels": [],
+                "messaging": [],
+                "objectives": [],
+                "budget_insights": {},
+                "metrics": {},
+                "competitive_insights": [],
+                "recommendations": []
+            }
+
     async def generate_insights(self, features: Dict[str, Any]) -> Dict[str, Any]:
         """Generate strategic insights and patch recommendations"""
         try:

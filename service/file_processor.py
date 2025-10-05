@@ -18,6 +18,36 @@ class FileProcessor:
         self.upload_dir = "temp_uploads"
         os.makedirs(self.upload_dir, exist_ok=True)
 
+    async def extract_content_direct(self, file: UploadFile) -> Dict[str, Any]:
+        """Extract content directly from uploaded file for immediate LLM processing"""
+        try:
+            # Read file content into memory
+            content = await file.read()
+            file_size = len(content)
+
+            # Extract content based on file type without saving to disk
+            extracted_content = await self._extract_content_from_bytes(
+                content, file.content_type, file.filename
+            )
+
+            return {
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "file_size": file_size,
+                "extracted_content": extracted_content,
+                "raw_content": content  # Keep raw for storage if needed
+            }
+
+        except Exception as e:
+            print(f"Error in direct content extraction: {e}")
+            return {
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "file_size": 0,
+                "extracted_content": f"Error processing file: {str(e)}",
+                "raw_content": b""
+            }
+
     def _serialize_data(self, data: Any) -> Any:
         """Convert non-serializable data types to JSON-serializable format"""
         if data is None:
@@ -91,6 +121,71 @@ class FileProcessor:
             print(f"File storage preparation error: {e}")
             # Fallback to base64 encoding
             return base64.b64encode(content).decode('utf-8'), f"db://artifacts/{project_id}/{filename}"
+
+    async def _extract_content_from_bytes(self, content: bytes, content_type: str, filename: str) -> str:
+        """Extract text content from bytes based on content type"""
+        try:
+            if content_type == "text/csv" or filename.endswith('.csv'):
+                return await self._extract_csv_from_bytes(content)
+            elif content_type == "application/json" or filename.endswith('.json'):
+                return content.decode('utf-8')
+            elif content_type == "text/plain" or filename.endswith('.txt'):
+                return content.decode('utf-8')
+            elif content_type == "application/pdf" or filename.endswith('.pdf'):
+                return await self._extract_pdf_from_bytes(content)
+            elif content_type.startswith('image/'):
+                return await self._extract_image_metadata_from_bytes(content, content_type)
+            else:
+                # Try to decode as text, fallback to basic info
+                try:
+                    return content.decode('utf-8')[:2000]  # First 2KB as text
+                except UnicodeDecodeError:
+                    return f"Binary file: {filename}, Size: {len(content)} bytes, Type: {content_type}"
+
+        except Exception as e:
+            return f"Error extracting content from {filename}: {str(e)}"
+
+    async def _extract_csv_from_bytes(self, content: bytes) -> str:
+        """Extract CSV content from bytes"""
+        try:
+            df = pd.read_csv(io.BytesIO(content))
+            summary = {
+                "rows": len(df),
+                "columns": list(df.columns),
+                "data_types": {col: str(dtype) for col, dtype in df.dtypes.items()},
+                "sample_data": df.head(3).to_dict('records'),
+                "statistics": self._serialize_data(df.describe().to_dict()) if len(df) > 0 else {}
+            }
+            return json.dumps(summary, indent=2)
+        except Exception as e:
+            return f"CSV parsing error: {str(e)}"
+
+    async def _extract_pdf_from_bytes(self, content: bytes) -> str:
+        """Extract text from PDF bytes"""
+        try:
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+            text_content = ""
+            for page_num, page in enumerate(pdf_reader.pages[:5]):  # First 5 pages
+                text_content += f"\n--- Page {page_num + 1} ---\n"
+                text_content += page.extract_text()
+            return text_content[:3000]  # First 3KB of text
+        except Exception as e:
+            return f"PDF extraction error: {str(e)}"
+
+    async def _extract_image_metadata_from_bytes(self, content: bytes, content_type: str) -> str:
+        """Extract image metadata from bytes"""
+        try:
+            image = Image.open(io.BytesIO(content))
+            metadata = {
+                "format": image.format,
+                "size": image.size,
+                "mode": image.mode,
+                "content_type": content_type,
+                "file_size": len(content)
+            }
+            return json.dumps(metadata, indent=2)
+        except Exception as e:
+            return f"Image processing error: {str(e)}"
 
     async def process_file(self, file: UploadFile, project_id: str) -> Dict[str, Any]:
         """Process uploaded file and extract summary information"""
