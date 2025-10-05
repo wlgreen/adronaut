@@ -24,8 +24,8 @@ class GeminiOrchestrator:
         if not response_text:
             return ""
 
-        # Try to extract JSON from markdown code blocks
-        json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+        # Try to extract JSON from markdown code blocks (with greedy matching for multi-line JSON)
+        json_pattern = r'```(?:json)?\s*(\{.*\})\s*```'
         matches = re.findall(json_pattern, response_text, re.DOTALL | re.IGNORECASE)
 
         if matches:
@@ -40,7 +40,7 @@ class GeminiOrchestrator:
             logger.debug(f"🔧 Response appears to be clean JSON: {len(stripped)} characters")
             return stripped
 
-        # If still no clean JSON, try to find JSON-like content
+        # If still no clean JSON, try to find JSON-like content (with greedy matching)
         json_pattern_loose = r'\{.*\}'
         match = re.search(json_pattern_loose, response_text, re.DOTALL)
         if match:

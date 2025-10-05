@@ -215,22 +215,36 @@ class Database:
 
     # Snapshot operations
     async def create_snapshot(self, project_id: str, result_json: Dict[str, Any]) -> str:
-        """Create a new analysis snapshot"""
+        """Create or update analysis snapshot (upsert)"""
         if not self.client:
             return str(uuid.uuid4())
 
         try:
             snapshot_data = {
-                "id": str(uuid.uuid4()),
                 "project_id": project_id,
                 "snapshot_data": self._serialize_json_data(result_json)
             }
 
-            result = self.client.table("analysis_snapshots").insert(snapshot_data).execute()
-            return result.data[0]["id"]
+            # Try to upsert (update if exists, insert if not)
+            result = self.client.table("analysis_snapshots").upsert(
+                snapshot_data,
+                on_conflict="project_id"
+            ).execute()
+
+            if result.data:
+                return result.data[0].get("id", str(uuid.uuid4()))
+            else:
+                return str(uuid.uuid4())
 
         except Exception as e:
             print(f"Database error in create_snapshot: {e}")
+            # If upsert fails, try to get existing snapshot ID
+            try:
+                existing = self.client.table("analysis_snapshots").select("id").eq("project_id", project_id).execute()
+                if existing.data:
+                    return existing.data[0]["id"]
+            except:
+                pass
             return str(uuid.uuid4())
 
     async def get_latest_snapshot(self, project_id: str) -> Optional[Dict[str, Any]]:
