@@ -303,6 +303,36 @@ async def continue_workflow(
         logger.error(f"❌ Failed to process HITL decision: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/autogen/run/status/{run_id}")
+async def get_workflow_status(run_id: str):
+    """Get the current status of a workflow run"""
+    try:
+        logger.info(f"📊 Checking workflow status: {run_id}")
+
+        if run_id not in active_runs:
+            logger.warning(f"⚠️ Run ID not found in active runs: {run_id}")
+            raise HTTPException(status_code=404, detail="Workflow run not found")
+
+        run_data = active_runs[run_id]
+        status_info = {
+            "run_id": run_id,
+            "status": run_data.get("status", "unknown"),
+            "current_step": run_data.get("current_step", "unknown"),
+            "project_id": run_data.get("project_id"),
+            "created_at": run_data.get("created_at"),
+            "error": run_data.get("error"),
+            "error_type": run_data.get("error_type")
+        }
+
+        logger.info(f"✅ Status retrieved for {run_id}: {status_info['status']} - {status_info['current_step']}")
+        return status_info
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to get workflow status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/artifact/{artifact_id}/download")
 async def download_artifact(artifact_id: str):
     """Download an artifact file"""
