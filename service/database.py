@@ -213,6 +213,19 @@ class Database:
             print(f"Database error in get_artifact_content: {e}")
             return {}
 
+    async def delete_artifact(self, artifact_id: str) -> bool:
+        """Delete an artifact from database (keeps storage file)"""
+        if not self.client:
+            return False
+
+        try:
+            result = self.client.table("artifacts").delete().eq("artifact_id", artifact_id).execute()
+            return True
+
+        except Exception as e:
+            print(f"Database error in delete_artifact: {e}")
+            return False
+
     # Snapshot operations
     async def create_snapshot(self, project_id: str, result_json: Dict[str, Any]) -> str:
         """Create or update analysis snapshot (upsert)"""

@@ -426,6 +426,27 @@ async def download_artifact(artifact_id: str):
         logger.error(f"❌ Failed to download artifact: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/artifact/{artifact_id}")
+async def delete_artifact(artifact_id: str):
+    """Delete an artifact from database (keeps storage file)"""
+    try:
+        logger.info(f"🗑️ Deleting artifact: {artifact_id}")
+
+        # Delete artifact from database
+        success = await db.delete_artifact(artifact_id)
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Artifact not found or deletion failed")
+
+        logger.info(f"✅ Artifact deleted: {artifact_id}")
+        return {"success": True, "artifact_id": artifact_id, "message": "Artifact deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to delete artifact: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/events/{run_id}")
 async def stream_events(run_id: str):
     """Stream workflow events via SSE"""
