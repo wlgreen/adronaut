@@ -53,14 +53,22 @@ class HTTPLoggingMiddleware(BaseHTTPMiddleware):
         # Log incoming request
         logger.info(f"🌐 [HTTP IN] {request.method} {request.url.path}")
 
-        # Process request
-        response = await call_next(request)
+        try:
+            # Process request
+            logger.info(f"🔄 [HTTP MIDDLEWARE] Calling endpoint handler...")
+            response = await call_next(request)
+            logger.info(f"✅ [HTTP MIDDLEWARE] Endpoint handler returned response")
 
-        # Log outgoing response
-        duration = (time.time() - start_time) * 1000
-        logger.info(f"🌐 [HTTP OUT] {request.method} {request.url.path} → {response.status_code} ({duration:.0f}ms)")
+            # Log outgoing response
+            duration = (time.time() - start_time) * 1000
+            logger.info(f"🌐 [HTTP OUT] {request.method} {request.url.path} → {response.status_code} ({duration:.0f}ms)")
 
-        return response
+            return response
+        except Exception as e:
+            duration = (time.time() - start_time) * 1000
+            logger.error(f"❌ [HTTP MIDDLEWARE] Exception in middleware: {e}")
+            logger.error(f"🔍 [HTTP MIDDLEWARE] Request: {request.method} {request.url.path} ({duration:.0f}ms)")
+            raise
 
 app.add_middleware(HTTPLoggingMiddleware)
 
