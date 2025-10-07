@@ -557,6 +557,12 @@ async def run_autogen_workflow(project_id: str, run_id: str):
 
         await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "completed")
 
+        # Update snapshot with insights
+        logger.info(f"💾 [RUN {run_id[:8]}] Updating analysis snapshot with insights...")
+        combined_snapshot = {**features, **insights}
+        snapshot_id = await db.create_snapshot(actual_project_id, combined_snapshot)
+        logger.info(f"📸 [RUN {run_id[:8]}] Snapshot updated with insights: {snapshot_id}")
+
         # Step 5: PATCH_PROPOSED - Create strategy patch
         logger.info(f"📝 [RUN {run_id[:8]}] STEP 5: PATCH_PROPOSED - Creating strategy patch...")
         active_runs[run_id]["current_step"] = "PATCH_PROPOSED"
