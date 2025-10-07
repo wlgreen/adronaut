@@ -381,9 +381,22 @@ async def download_artifact(artifact_id: str):
 @app.get("/events/{run_id}")
 async def stream_events(run_id: str):
     """Stream workflow events via SSE"""
+    logger.info(f"📡 SSE connection requested for run_id: {run_id}")
+
+    # Check if run exists
+    if run_id not in active_runs:
+        logger.warning(f"⚠️ SSE connection attempted for unknown run_id: {run_id}")
+        logger.info(f"📊 Active runs: {list(active_runs.keys())}")
+        # Return a 404 response instead of streaming
+        raise HTTPException(status_code=404, detail=f"Run ID {run_id} not found in active runs")
+
+    logger.info(f"✅ SSE connection established for run_id: {run_id}")
+
     async def event_generator():
+        event_count = 0
         while run_id in active_runs:
             run_data = active_runs[run_id]
+            event_count += 1
 
             # Send current status
             event_data = {
@@ -394,18 +407,27 @@ async def stream_events(run_id: str):
                 "timestamp": datetime.utcnow().isoformat()
             }
 
+            logger.info(f"📨 SSE Event #{event_count} for {run_id[:8]}: {run_data['status']} - {run_data['current_step']}")
             yield f"data: {json.dumps(event_data)}\n\n"
 
             # Check if run is complete
             if run_data["status"] in ["completed", "failed", "hitl_required"]:
+                logger.info(f"🏁 SSE stream ending for {run_id[:8]}: status={run_data['status']}")
                 break
 
             await asyncio.sleep(1)  # Poll every second
 
+        if run_id not in active_runs:
+            logger.warning(f"⚠️ SSE stream ended: run_id {run_id[:8]} removed from active_runs")
+
     return StreamingResponse(
         event_generator(),
-        media_type="text/plain",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
     )
 
 @app.get("/project/{project_id}/status")
