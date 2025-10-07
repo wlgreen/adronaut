@@ -52,41 +52,90 @@ class GeminiOrchestrator:
         return ""
 
     def __init__(self):
-        # Configure Gemini API
+        # Configure API keys
         self.gemini_api_key = os.getenv("GEMINI_API_KEY")
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
 
         if not self.gemini_api_key and not self.openai_api_key:
             raise ValueError("Either GEMINI_API_KEY or OPENAI_API_KEY environment variable is required")
 
-        # Initialize LLM - prefer Gemini
+        # Per-task LLM configuration with defaults
+        # Format: provider:model (e.g., "gemini:gemini-2.5-pro" or "openai:gpt-5")
+        self.task_llm_config = {
+            'FEATURES': os.getenv('LLM_FEATURES', 'gemini:gemini-2.5-pro'),
+            'INSIGHTS': os.getenv('LLM_INSIGHTS', 'openai:gpt-5'),
+            'PATCH_PROPOSED': os.getenv('LLM_PATCH', 'openai:gpt-5'),
+            'BRIEF': os.getenv('LLM_BRIEF', 'gemini:gemini-2.5-pro'),
+            'ANALYZE': os.getenv('LLM_ANALYZE', 'openai:gpt-5'),
+            'EDIT': os.getenv('LLM_EDIT', 'openai:gpt-5'),
+        }
+
+        # Initialize Gemini if we have the key
+        self.gemini_model = None
         if self.gemini_api_key:
-            logger.info("✅ Gemini API key found - Using Gemini API for orchestration")
             try:
                 genai.configure(api_key=self.gemini_api_key)
-                # Initialize Gemini 2.5 Pro model
-                self.model = genai.GenerativeModel('gemini-2.5-pro')
-                self.use_gemini = True
-                logger.info("✅ Gemini API successfully configured with model: gemini-2.5-pro")
+                self.gemini_model = genai.GenerativeModel('gemini-2.5-pro')
+                logger.info("✅ Gemini API configured with model: gemini-2.5-pro")
             except Exception as e:
                 logger.error(f"❌ Failed to configure Gemini API: {e}")
-                logger.info("🔄 Falling back to OpenAI API")
-                import openai
-                openai.api_key = self.openai_api_key
-                self.model = None
-                self.use_gemini = False
-        else:
-            logger.info("❌ Gemini API key not available - Using OpenAI API for orchestration")
-            import openai
-            openai.api_key = self.openai_api_key
-            self.model = None
-            self.use_gemini = False
 
-        # Log final configuration
-        if self.use_gemini:
-            logger.info("🤖 AI Provider: Google Gemini 2.5 Pro (Primary)")
+        # Initialize OpenAI if we have the key
+        self.openai_client = None
+        if self.openai_api_key:
+            try:
+                import openai
+                self.openai_client = openai.OpenAI(api_key=self.openai_api_key)
+                logger.info("✅ OpenAI API configured")
+            except Exception as e:
+                logger.error(f"❌ Failed to configure OpenAI API: {e}")
+
+        # Log task-specific LLM configuration
+        logger.info("🤖 Per-task LLM Configuration:")
+        for task, config in self.task_llm_config.items():
+            logger.info(f"   {task}: {config}")
+
+        # Backward compatibility: set use_gemini and model for legacy code
+        default_provider = self.task_llm_config.get('FEATURES', '').split(':')[0]
+        self.use_gemini = default_provider == 'gemini'
+        self.model = self.gemini_model if self.use_gemini else None
+
+    async def _call_llm(self, task: str, prompt: str) -> str:
+        """
+        Call the configured LLM for the given task
+        Args:
+            task: Task name (FEATURES, INSIGHTS, PATCH_PROPOSED, etc.)
+            prompt: The prompt to send to the LLM
+        Returns:
+            Response text from the LLM
+        """
+        config = self.task_llm_config.get(task, 'gemini:gemini-2.5-pro')
+        provider, model_name = config.split(':', 1)
+
+        logger.info(f"🤖 [{task}] Using {provider}:{model_name}")
+
+        if provider == 'gemini':
+            if not self.gemini_model:
+                raise ValueError(f"Gemini model not initialized but required for task {task}")
+            response = self.gemini_model.generate_content(prompt)
+            return response.text
+
+        elif provider == 'openai':
+            if not self.openai_client:
+                raise ValueError(f"OpenAI client not initialized but required for task {task}")
+
+            response = self.openai_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are an expert marketing analyst AI."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7
+            )
+            return response.choices[0].message.content
+
         else:
-            logger.info("🤖 AI Provider: OpenAI GPT-4o (Fallback)")
+            raise ValueError(f"Unknown LLM provider: {provider}")
 
     async def extract_features(self, artifacts: List[Dict]) -> Dict[str, Any]:
         """Extract marketing features from uploaded artifacts"""
@@ -161,49 +210,19 @@ class GeminiOrchestrator:
             MUST return valid JSON. Do not include any explanatory text outside the JSON structure.
             """
 
-            if self.use_gemini:
-                logger.info("🤖 Sending request to Gemini for feature extraction")
-                logger.info(f"📝 Request Details:")
-                logger.info(f"   - Model: gemini-2.5-pro")
-                logger.info(f"   - Prompt length: {len(prompt)} characters")
-                logger.info(f"   - Artifacts count: {len(artifacts)}")
-                logger.debug(f"📨 Full prompt:\n{prompt}")
+            logger.info("🤖 Sending feature extraction request to configured LLM")
+            logger.info(f"📝 Request Details:")
+            logger.info(f"   - Prompt length: {len(prompt)} characters")
+            logger.info(f"   - Artifacts count: {len(artifacts)}")
+            logger.debug(f"📨 Full prompt:\n{prompt}")
 
-                response = self.model.generate_content(prompt)
-                features_text = response.text
+            features_text = await self._call_llm('FEATURES', prompt)
 
-                logger.info(f"✅ Gemini response received")
-                logger.info(f"📤 Response Details:")
-                logger.info(f"   - Response length: {len(features_text)} characters")
-                logger.info(f"   - Response type: {type(response).__name__}")
-                logger.debug(f"📋 Full response:\n{features_text}")
-                logger.info(f"🔍 Response preview: {features_text[:200]}...")
-            else:
-                # OpenAI fallback
-                logger.info("🤖 Sending request to OpenAI GPT-4o for feature extraction")
-                logger.info(f"📝 Request Details:")
-                logger.info(f"   - Model: gpt-4o")
-                logger.info(f"   - Prompt length: {len(prompt)} characters")
-                logger.info(f"   - Temperature: 0.7")
-                logger.info(f"   - Artifacts count: {len(artifacts)}")
-                logger.debug(f"📨 Full prompt:\n{prompt}")
-
-                from openai import OpenAI
-                client = OpenAI(api_key=self.openai_api_key)
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.7
-                )
-                features_text = response.choices[0].message.content
-
-                logger.info(f"✅ OpenAI response received")
-                logger.info(f"📤 Response Details:")
-                logger.info(f"   - Response length: {len(features_text)} characters")
-                logger.info(f"   - Usage: {response.usage if hasattr(response, 'usage') else 'N/A'}")
-                logger.info(f"   - Model: {response.model if hasattr(response, 'model') else 'gpt-4o'}")
-                logger.debug(f"📋 Full response:\n{features_text}")
-                logger.info(f"🔍 Response preview: {features_text[:200]}...")
+            logger.info(f"✅ LLM response received for feature extraction")
+            logger.info(f"📤 Response Details:")
+            logger.info(f"   - Response length: {len(features_text)} characters")
+            logger.debug(f"📋 Full response:\n{features_text}")
+            logger.info(f"🔍 Response preview: {features_text[:200]}...")
 
             # Try to parse JSON response
             try:
@@ -328,41 +347,17 @@ class GeminiOrchestrator:
             - justification: string explaining the rationale for these recommendations
             """
 
-            if self.use_gemini:
-                logger.info("🤖 Sending insights request to Gemini")
-                logger.info(f"📝 Request Details:")
-                logger.info(f"   - Model: gemini-2.5-pro")
-                logger.info(f"   - Prompt length: {len(prompt)} characters")
-                logger.debug(f"📨 Full insights prompt:\n{prompt}")
+            logger.info("🤖 Sending insights request to configured LLM")
+            logger.info(f"📝 Request Details:")
+            logger.info(f"   - Prompt length: {len(prompt)} characters")
+            logger.debug(f"📨 Full insights prompt:\n{prompt}")
 
-                response = self.model.generate_content(prompt)
-                insights_text = response.text
+            insights_text = await self._call_llm('INSIGHTS', prompt)
 
-                logger.info(f"✅ Gemini insights response received")
-                logger.info(f"📤 Response length: {len(insights_text)} characters")
-                logger.debug(f"📋 Full insights response:\n{insights_text}")
-                logger.info(f"🔍 Insights preview: {insights_text[:200]}...")
-            else:
-                # OpenAI fallback
-                logger.info("🤖 Sending insights request to OpenAI GPT-4o")
-                logger.info(f"📝 Request Details:")
-                logger.info(f"   - Model: gpt-4o")
-                logger.info(f"   - Prompt length: {len(prompt)} characters")
-                logger.debug(f"📨 Full insights prompt:\n{prompt}")
-
-                from openai import OpenAI
-                client = OpenAI(api_key=self.openai_api_key)
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.7
-                )
-                insights_text = response.choices[0].message.content
-
-                logger.info(f"✅ OpenAI insights response received")
-                logger.info(f"📤 Response length: {len(insights_text)} characters")
-                logger.debug(f"📋 Full insights response:\n{insights_text}")
-                logger.info(f"🔍 Insights preview: {insights_text[:200]}...")
+            logger.info(f"✅ LLM insights response received")
+            logger.info(f"📤 Response length: {len(insights_text)} characters")
+            logger.debug(f"📋 Full insights response:\n{insights_text}")
+            logger.info(f"🔍 Insights preview: {insights_text[:200]}...")
 
             # Try to parse JSON response
             try:
@@ -480,41 +475,17 @@ class GeminiOrchestrator:
             - implementation_guide: array of step-by-step actions
             """
 
-            if self.use_gemini:
-                logger.info("🤖 Sending brief compilation request to Gemini")
-                logger.info(f"📝 Request Details:")
-                logger.info(f"   - Model: gemini-2.5-pro")
-                logger.info(f"   - Prompt length: {len(prompt)} characters")
-                logger.debug(f"📨 Full brief prompt:\n{prompt}")
+            logger.info("🤖 Sending brief compilation request to configured LLM")
+            logger.info(f"📝 Request Details:")
+            logger.info(f"   - Prompt length: {len(prompt)} characters")
+            logger.debug(f"📨 Full brief prompt:\n{prompt}")
 
-                response = self.model.generate_content(prompt)
-                brief_text = response.text
+            brief_text = await self._call_llm('BRIEF', prompt)
 
-                logger.info(f"✅ Gemini brief response received")
-                logger.info(f"📤 Response length: {len(brief_text)} characters")
-                logger.debug(f"📋 Full brief response:\n{brief_text}")
-                logger.info(f"🔍 Brief preview: {brief_text[:200]}...")
-            else:
-                # OpenAI fallback
-                logger.info("🤖 Sending brief compilation request to OpenAI GPT-4o")
-                logger.info(f"📝 Request Details:")
-                logger.info(f"   - Model: gpt-4o")
-                logger.info(f"   - Prompt length: {len(prompt)} characters")
-                logger.debug(f"📨 Full brief prompt:\n{prompt}")
-
-                from openai import OpenAI
-                client = OpenAI(api_key=self.openai_api_key)
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.7
-                )
-                brief_text = response.choices[0].message.content
-
-                logger.info(f"✅ OpenAI brief response received")
-                logger.info(f"📤 Response length: {len(brief_text)} characters")
-                logger.debug(f"📋 Full brief response:\n{brief_text}")
-                logger.info(f"🔍 Brief preview: {brief_text[:200]}...")
+            logger.info(f"✅ LLM brief response received")
+            logger.info(f"📤 Response length: {len(brief_text)} characters")
+            logger.debug(f"📋 Full brief response:\n{brief_text}")
+            logger.info(f"🔍 Brief preview: {brief_text[:200]}...")
 
             # Try to parse JSON response
             try:
@@ -668,43 +639,18 @@ class GeminiOrchestrator:
             - impact_assessment: string describing expected impact
             """
 
-            if self.use_gemini:
-                logger.info(f"🤖 Sending patch edit request to Gemini for patch {patch_id}")
-                logger.info(f"📝 Request Details:")
-                logger.info(f"   - Model: gemini-2.5-pro")
-                logger.info(f"   - Edit request: '{edit_request}'")
-                logger.info(f"   - Prompt length: {len(prompt)} characters")
-                logger.debug(f"📨 Full edit prompt:\n{prompt}")
+            logger.info(f"🤖 Sending patch edit request to configured LLM for patch {patch_id}")
+            logger.info(f"📝 Request Details:")
+            logger.info(f"   - Edit request: '{edit_request}'")
+            logger.info(f"   - Prompt length: {len(prompt)} characters")
+            logger.debug(f"📨 Full edit prompt:\n{prompt}")
 
-                response = self.model.generate_content(prompt)
-                edited_text = response.text
+            edited_text = await self._call_llm('EDIT', prompt)
 
-                logger.info(f"✅ Gemini edit response received")
-                logger.info(f"📤 Response length: {len(edited_text)} characters")
-                logger.debug(f"📋 Full edit response:\n{edited_text}")
-                logger.info(f"🔍 Edit preview: {edited_text[:200]}...")
-            else:
-                # OpenAI fallback
-                logger.info(f"🤖 Sending patch edit request to OpenAI GPT-4o for patch {patch_id}")
-                logger.info(f"📝 Request Details:")
-                logger.info(f"   - Model: gpt-4o")
-                logger.info(f"   - Edit request: '{edit_request}'")
-                logger.info(f"   - Prompt length: {len(prompt)} characters")
-                logger.debug(f"📨 Full edit prompt:\n{prompt}")
-
-                from openai import OpenAI
-                client = OpenAI(api_key=self.openai_api_key)
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.7
-                )
-                edited_text = response.choices[0].message.content
-
-                logger.info(f"✅ OpenAI edit response received")
-                logger.info(f"📤 Response length: {len(edited_text)} characters")
-                logger.debug(f"📋 Full edit response:\n{edited_text}")
-                logger.info(f"🔍 Edit preview: {edited_text[:200]}...")
+            logger.info(f"✅ LLM edit response received")
+            logger.info(f"📤 Response length: {len(edited_text)} characters")
+            logger.debug(f"📋 Full edit response:\n{edited_text}")
+            logger.info(f"🔍 Edit preview: {edited_text[:200]}...")
 
             # Try to parse JSON response
             try:
