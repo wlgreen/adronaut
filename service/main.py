@@ -214,28 +214,34 @@ async def upload_file_direct(
 @app.post("/autogen/run/start")
 async def start_workflow(project_id: str, background_tasks: BackgroundTasks):
     """Start the AutoGen workflow for a project"""
+    logger.info(f"🎬 [ENDPOINT] /autogen/run/start called with project_id: {project_id}")
     try:
         run_id = str(uuid.uuid4())
-        logger.info(f"🚀 Starting AutoGen workflow for project {project_id}, run_id: {run_id}")
+        logger.info(f"🚀 [ENDPOINT] Starting AutoGen workflow for project {project_id}, run_id: {run_id}")
 
         # Initialize run tracking
+        logger.info(f"📝 [ENDPOINT] Initializing run tracking...")
         active_runs[run_id] = {
             "project_id": project_id,
             "status": "starting",
             "current_step": "INGEST",
             "events": []
         }
-        logger.info(f"📊 Initialized run tracking for {run_id}")
+        logger.info(f"📊 [ENDPOINT] Initialized run tracking for {run_id}")
 
         # Start workflow in background
-        logger.info(f"⚡ Launching background workflow task...")
+        logger.info(f"⚡ [ENDPOINT] Launching background workflow task...")
         background_tasks.add_task(run_autogen_workflow, project_id, run_id)
+        logger.info(f"✅ [ENDPOINT] Background task queued successfully")
 
-        logger.info(f"✅ Workflow started successfully, run_id: {run_id}")
-        return {"success": True, "run_id": run_id}
+        response_data = {"success": True, "run_id": run_id}
+        logger.info(f"📤 [ENDPOINT] Returning response: {response_data}")
+        return response_data
 
     except Exception as e:
-        logger.error(f"❌ Failed to start workflow: {str(e)}")
+        logger.error(f"❌ [ENDPOINT] Failed to start workflow: {str(e)}")
+        import traceback
+        logger.error(f"🔍 [ENDPOINT] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/autogen/run/continue")
