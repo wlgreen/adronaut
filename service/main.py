@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 import os
@@ -233,7 +233,7 @@ async def upload_file_direct(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/autogen/run/start")
-async def start_workflow(project_id: str, background_tasks: BackgroundTasks):
+async def start_workflow(project_id: str):
     """Start the AutoGen workflow for a project"""
     logger.info(f"🎬 [ENDPOINT] /autogen/run/start called with project_id: {project_id}")
     try:
@@ -250,14 +250,24 @@ async def start_workflow(project_id: str, background_tasks: BackgroundTasks):
         }
         logger.info(f"📊 [ENDPOINT] Initialized run tracking for {run_id}")
 
-        # Start workflow in background
-        logger.info(f"⚡ [ENDPOINT] Launching background workflow task...")
-        background_tasks.add_task(run_autogen_workflow, project_id, run_id)
-        logger.info(f"✅ [ENDPOINT] Background task queued successfully")
+        # Start workflow in background using asyncio.create_task (truly non-blocking)
+        logger.info(f"⚡ [ENDPOINT] Launching background workflow task with asyncio...")
+        asyncio.create_task(run_autogen_workflow(project_id, run_id))
+        logger.info(f"✅ [ENDPOINT] Background task launched successfully")
 
         response_data = {"success": True, "run_id": run_id}
         logger.info(f"📤 [ENDPOINT] Returning response: {response_data}")
-        return response_data
+
+        # Use explicit JSONResponse with headers to work around Railway proxy issues
+        return JSONResponse(
+            content=response_data,
+            status_code=200,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Type": "application/json"
+            }
+        )
 
     except Exception as e:
         logger.error(f"❌ [ENDPOINT] Failed to start workflow: {str(e)}")
@@ -270,8 +280,7 @@ async def continue_workflow(
     project_id: str,
     patch_id: str,
     action: str,  # "approve", "reject", "edit"
-    edit_request: Optional[str] = None,
-    background_tasks: BackgroundTasks = None
+    edit_request: Optional[str] = None
 ):
     """Continue workflow after HITL decision"""
     try:
@@ -316,12 +325,11 @@ async def continue_workflow(
         logger.info(f"📋 Patch status updated to: {status}")
 
         if action == "approve":
-            # Continue workflow in background
+            # Continue workflow in background using asyncio
             run_id = str(uuid.uuid4())
             logger.info(f"✅ Patch approved - continuing workflow with run_id: {run_id}")
-            if background_tasks:
-                background_tasks.add_task(continue_autogen_workflow, project_id, patch_id, run_id)
-                logger.info(f"🚀 Background workflow continuation task launched")
+            asyncio.create_task(continue_autogen_workflow(project_id, patch_id, run_id))
+            logger.info(f"🚀 Background workflow continuation task launched")
         else:
             logger.info(f"❌ Patch rejected - workflow stopped")
 
