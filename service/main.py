@@ -495,6 +495,10 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         artifacts = await db.get_artifacts(actual_project_id)
         logger.info(f"📦 [RUN {run_id[:8]}] Retrieved {len(artifacts)} artifacts")
 
+        if len(artifacts) == 0:
+            logger.error(f"❌ [RUN {run_id[:8]}] No artifacts found for project {actual_project_id}")
+            raise Exception(f"No artifacts found for project {actual_project_id}. Please upload files first.")
+
         # Step 2: FEATURES - Extract features
         logger.info(f"🔍 [RUN {run_id[:8]}] STEP 2: FEATURES - Starting feature extraction...")
         active_runs[run_id]["current_step"] = "FEATURES"
