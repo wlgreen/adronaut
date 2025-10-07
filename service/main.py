@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 import os
 from dotenv import load_dotenv
@@ -11,6 +12,7 @@ import uuid
 from datetime import datetime
 import logging
 import base64
+import time
 
 # Configure comprehensive logging with debug level for LLM interactions
 logging.basicConfig(
@@ -42,6 +44,25 @@ from file_processor import FileProcessor
 load_dotenv()
 
 app = FastAPI(title="Adronaut AutoGen Service", version="1.0.0")
+
+# HTTP request/response logging middleware
+class HTTPLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+
+        # Log incoming request
+        logger.info(f"🌐 [HTTP IN] {request.method} {request.url.path}")
+
+        # Process request
+        response = await call_next(request)
+
+        # Log outgoing response
+        duration = (time.time() - start_time) * 1000
+        logger.info(f"🌐 [HTTP OUT] {request.method} {request.url.path} → {response.status_code} ({duration:.0f}ms)")
+
+        return response
+
+app.add_middleware(HTTPLoggingMiddleware)
 
 # CORS middleware for Next.js frontend
 app.add_middleware(
