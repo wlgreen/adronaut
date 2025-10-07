@@ -258,24 +258,23 @@ async def start_workflow(project_id: str):
         }
         logger.info(f"📊 [ENDPOINT] Initialized run tracking for {run_id}")
 
-        # Start workflow in background using asyncio.create_task (truly non-blocking)
-        logger.info(f"⚡ [ENDPOINT] Launching background workflow task with asyncio...")
-        asyncio.create_task(run_autogen_workflow(project_id, run_id))
+        # Start workflow in background - wrapped to ensure it doesn't block response
+        logger.info(f"⚡ [ENDPOINT] Launching background workflow task...")
+
+        async def run_workflow_wrapper():
+            """Wrapper to ensure workflow runs independently"""
+            await asyncio.sleep(0.1)  # Let the response send first
+            await run_autogen_workflow(project_id, run_id)
+
+        asyncio.create_task(run_workflow_wrapper())
         logger.info(f"✅ [ENDPOINT] Background task launched successfully")
 
         response_data = {"success": True, "run_id": run_id}
         logger.info(f"📤 [ENDPOINT] Returning response: {response_data}")
+        logger.info(f"🎯 [ENDPOINT] About to return from function...")
 
-        # Use explicit JSONResponse with headers to work around Railway proxy issues
-        return JSONResponse(
-            content=response_data,
-            status_code=200,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "X-Content-Type-Options": "nosniff",
-                "Content-Type": "application/json"
-            }
-        )
+        # Return dict directly - let FastAPI handle serialization
+        return response_data
 
     except Exception as e:
         logger.error(f"❌ [ENDPOINT] Failed to start workflow: {str(e)}")
@@ -333,10 +332,15 @@ async def continue_workflow(
         logger.info(f"📋 Patch status updated to: {status}")
 
         if action == "approve":
-            # Continue workflow in background using asyncio
+            # Continue workflow in background
             run_id = str(uuid.uuid4())
             logger.info(f"✅ Patch approved - continuing workflow with run_id: {run_id}")
-            asyncio.create_task(continue_autogen_workflow(project_id, patch_id, run_id))
+
+            async def run_continue_wrapper():
+                await asyncio.sleep(0.1)
+                await continue_autogen_workflow(project_id, patch_id, run_id)
+
+            asyncio.create_task(run_continue_wrapper())
             logger.info(f"🚀 Background workflow continuation task launched")
         else:
             logger.info(f"❌ Patch rejected - workflow stopped")
