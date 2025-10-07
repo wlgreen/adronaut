@@ -254,6 +254,7 @@ async def start_workflow(project_id: str):
             "project_id": project_id,
             "status": "starting",
             "current_step": "INGEST",
+            "status_message": "Starting analysis...",
             "events": []
         }
         logger.info(f"📊 [ENDPOINT] Initialized run tracking for {run_id}")
@@ -451,10 +452,11 @@ async def stream_events(run_id: str):
                 "project_id": run_data["project_id"],
                 "status": run_data["status"],
                 "current_step": run_data["current_step"],
+                "status_message": run_data.get("status_message", "Processing..."),
                 "timestamp": datetime.utcnow().isoformat()
             }
 
-            logger.info(f"📨 SSE Event #{event_count} for {run_id[:8]}: {run_data['status']} - {run_data['current_step']}")
+            logger.info(f"📨 SSE Event #{event_count} for {run_id[:8]}: {run_data['status']} - {run_data.get('status_message', run_data['current_step'])}")
             yield f"data: {json.dumps(event_data)}\n\n"
 
             # Check if run is complete
@@ -529,6 +531,7 @@ async def run_autogen_workflow(project_id: str, run_id: str):
             "project_id": actual_project_id,
             "status": "running",
             "current_step": "INGEST",
+            "status_message": "Loading artifacts...",
             "events": []
         }
         logger.info(f"📊 [RUN {run_id[:8]}] Run tracking initialized - Status: running")
@@ -539,6 +542,7 @@ async def run_autogen_workflow(project_id: str, run_id: str):
 
         # Step 1: INGEST - Get artifacts
         logger.info(f"📥 [RUN {run_id[:8]}] STEP 1: INGEST - Retrieving artifacts...")
+        active_runs[run_id]["status_message"] = "Loading artifacts..."
         artifacts = await db.get_artifacts(actual_project_id)
         logger.info(f"📦 [RUN {run_id[:8]}] Retrieved {len(artifacts)} artifacts")
 
@@ -549,6 +553,7 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         # Step 2: FEATURES - Extract features
         logger.info(f"🔍 [RUN {run_id[:8]}] STEP 2: FEATURES - Starting feature extraction...")
         active_runs[run_id]["current_step"] = "FEATURES"
+        active_runs[run_id]["status_message"] = "Feature extraction..."
         await db.log_step_event(actual_project_id, run_id, "FEATURES", "started")
 
         logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Feature extraction")
@@ -580,6 +585,7 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         # Step 4: INSIGHTS - Generate insights
         logger.info(f"💡 [RUN {run_id[:8]}] STEP 4: INSIGHTS - Generating strategic insights...")
         active_runs[run_id]["current_step"] = "INSIGHTS"
+        active_runs[run_id]["status_message"] = "Insights building..."
         await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "started")
 
         logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Strategic insights generation")
@@ -613,6 +619,7 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         # Step 5: PATCH_PROPOSED - Create strategy patch
         logger.info(f"📝 [RUN {run_id[:8]}] STEP 5: PATCH_PROPOSED - Creating strategy patch...")
         active_runs[run_id]["current_step"] = "PATCH_PROPOSED"
+        active_runs[run_id]["status_message"] = "Strategy building..."
 
         # Log patch details before storing
         patch_data = insights.get("patch", {})
