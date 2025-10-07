@@ -47,7 +47,9 @@ app = FastAPI(title="Adronaut AutoGen Service", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",  # Local development
+        "http://localhost:3000",  # Local development (default)
+        "http://localhost:3004",  # Local development (custom port)
+        "http://localhost:3001",  # Local development (alternative)
         "https://*.vercel.app",   # Vercel deployments
         "https://vercel.app",     # Vercel domain
     ],
