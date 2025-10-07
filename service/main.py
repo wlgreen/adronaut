@@ -473,9 +473,9 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         logger.info(f"   - Database connected: {db.client is not None}")
         logger.info(f"   - Orchestrator type: {type(orchestrator).__name__}")
 
-        # Ensure project exists in database
-        actual_project_id = await db.get_or_create_project(f"Project {project_id[:8]}")
-        logger.info(f"📁 [RUN {run_id[:8]}] Project ensured: {actual_project_id}")
+        # Use the project_id directly (frontend manages project creation)
+        actual_project_id = project_id
+        logger.info(f"📁 [RUN {run_id[:8]}] Using project_id: {actual_project_id}")
 
         # Update run status
         active_runs[run_id] = {
