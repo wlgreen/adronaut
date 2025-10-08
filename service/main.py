@@ -485,7 +485,7 @@ async def stream_events(run_id: str):
                 logger.info(f"🏁 SSE stream ending for {run_id[:8]}: status={run_data['status']}")
                 break
 
-            await asyncio.sleep(1)  # Poll every second
+            await asyncio.sleep(0.1)  # Poll every 100ms to catch fast transitions
 
         if run_id not in active_runs:
             logger.warning(f"⚠️ SSE stream ended: run_id {run_id[:8]} removed from active_runs")
@@ -564,6 +564,7 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         # Step 1: INGEST - Get artifacts
         logger.info(f"📥 [RUN {run_id[:8]}] STEP 1: INGEST - Retrieving artifacts...")
         active_runs[run_id]["status_message"] = "Loading artifacts..."
+        await asyncio.sleep(0.3)  # Give SSE time to capture this status
         artifacts = await db.get_artifacts(actual_project_id)
         logger.info(f"📦 [RUN {run_id[:8]}] Retrieved {len(artifacts)} artifacts")
 
@@ -575,6 +576,7 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         logger.info(f"🔍 [RUN {run_id[:8]}] STEP 2: FEATURES - Starting feature extraction...")
         active_runs[run_id]["current_step"] = "FEATURES"
         active_runs[run_id]["status_message"] = "Feature extraction..."
+        await asyncio.sleep(0.3)  # Give SSE time to capture this status
         await db.log_step_event(actual_project_id, run_id, "FEATURES", "started")
 
         logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Feature extraction")
@@ -607,6 +609,7 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         logger.info(f"💡 [RUN {run_id[:8]}] STEP 4: INSIGHTS - Generating strategic insights...")
         active_runs[run_id]["current_step"] = "INSIGHTS"
         active_runs[run_id]["status_message"] = "Insights building..."
+        await asyncio.sleep(0.3)  # Give SSE time to capture this status
         await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "started")
 
         logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Strategic insights generation")
@@ -641,6 +644,7 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         logger.info(f"📝 [RUN {run_id[:8]}] STEP 5: PATCH_PROPOSED - Creating strategy patch...")
         active_runs[run_id]["current_step"] = "PATCH_PROPOSED"
         active_runs[run_id]["status_message"] = "Strategy building..."
+        await asyncio.sleep(0.3)  # Give SSE time to capture this status
 
         # Log patch details before storing
         patch_data = insights.get("patch", {})
