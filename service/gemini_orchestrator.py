@@ -124,13 +124,14 @@ class GeminiOrchestrator:
             if not self.openai_client:
                 raise ValueError(f"OpenAI client not initialized but required for task {task}")
 
+            # Note: Some models like o1/gpt-5 only support default temperature (1.0)
+            # Don't set temperature to allow model defaults
             response = self.openai_client.chat.completions.create(
                 model=model_name,
                 messages=[
                     {"role": "system", "content": "You are an expert marketing analyst AI."},
                     {"role": "user", "content": prompt}
-                ],
-                temperature=0.7
+                ]
             )
             return response.choices[0].message.content
 
