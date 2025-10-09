@@ -120,7 +120,7 @@ class GeminiOrchestrator:
         Returns:
             Response text from the LLM
         """
-        from .logging_metrics import LLMMetrics
+        from logging_metrics import LLMMetrics
 
         config = self.task_llm_config.get(task, 'gemini:gemini-2.5-flash')
         provider, model_name = config.split(':', 1)
@@ -236,38 +236,96 @@ class GeminiOrchestrator:
                 }
 
             prompt = f"""
-            As a Marketing Data Feature Extractor, analyze the following marketing artifacts and extract key insights:
+            As a Marketing Data Feature Extractor, analyze the following marketing artifacts and extract ONLY information that is explicitly present.
 
             Number of artifacts: {len(artifact_summaries)}
 
             Artifacts Data: {json.dumps(artifact_summaries, indent=2)}
 
-            CRITICAL: Base all claims on evidence present in the artifacts.
-            If data is insufficient for a claim, explicitly state "insufficient_evidence" in that field.
-            DO NOT speculate or guess. Only extract features that are directly supported by the artifact data.
+            **CRITICAL RULES:**
+            1. Extract ONLY data explicitly present in artifacts
+            2. Use "insufficient_evidence" for any missing information - DO NOT infer, suggest, or assume
+            3. Include specific references to where you found each piece of data
+            4. Separate facts from any insights drawn from those facts
 
-            Extract the following marketing features:
-            1. Target audience demographics
-            2. Brand positioning
-            3. Marketing channels mentioned
-            4. Key messaging themes
-            5. Campaign objectives
-            6. Budget information (if available)
-            7. Performance metrics (if available)
-            8. Competitive landscape insights
+            **GOOD Example (data present):**
+            {{
+              "target_audience": {{
+                "segments": [
+                  {{
+                    "name": "Young professionals",
+                    "age_range": "25-35",
+                    "location": "urban areas",
+                    "source": "Camp_001 targeting description"
+                  }}
+                ],
+                "data_completeness": "partial"
+              }}
+            }}
 
-            Return your analysis as a JSON object with these keys:
-            - target_audience: object with demographic details (if data is limited, provide general assumptions)
-            - brand_positioning: string describing positioning (if unclear, provide "Not clearly defined" or general observation)
-            - channels: array of marketing channels (even if none mentioned, suggest likely channels)
-            - messaging: array of key themes (extract any themes present or suggest typical ones)
-            - objectives: array of campaign goals (extract explicit goals or infer likely objectives)
-            - budget_insights: object with budget information (if none available, note "No budget data available")
-            - metrics: object with performance data (if none available, suggest relevant metrics to track)
-            - competitive_insights: array of competitor observations (if none available, provide general market insights)
-            - recommendations: array of improvement suggestions (always provide actionable recommendations)
+            **BAD Example (hallucination):**
+            {{
+              "target_audience": {{
+                "segments": [
+                  {{
+                    "name": "Young professionals",
+                    "likely_income": "$60-100k",  ← WRONG: Not in data!
+                    "preferred_devices": "mobile"  ← WRONG: Not in data!
+                  }}
+                ]
+              }}
+            }}
 
-            MUST return valid JSON. Do not include any explanatory text outside the JSON structure.
+            Return a JSON object with these keys (use "insufficient_evidence" if data not present):
+
+            {{
+              "target_audience": {{
+                "segments": [array of audience segments found] or "insufficient_evidence",
+                "data_source": "where this data came from"
+              }},
+              "metrics": {{
+                "campaigns": {{
+                  "campaign_id": {{
+                    "impressions": number or "insufficient_evidence",
+                    "clicks": number or "insufficient_evidence",
+                    "conversions": number or "insufficient_evidence",
+                    "spend": number or "insufficient_evidence",
+                    "revenue": number or "insufficient_evidence",
+                    "ctr": "percentage" or "insufficient_evidence",
+                    "cpa": number or "insufficient_evidence",
+                    "roas": number or "insufficient_evidence",
+                    "date_range": "YYYY-MM-DD to YYYY-MM-DD"
+                  }}
+                }},
+                "data_completeness": "complete" | "partial" | "minimal"
+              }},
+              "channels": [array of channels explicitly mentioned] or "insufficient_evidence",
+              "messaging": [array of themes/messages explicitly stated] or "insufficient_evidence",
+              "creative_performance": {{
+                "by_campaign": {{
+                  "campaign_id": {{
+                    "creative_type": "description from data",
+                    "performance_notes": "explicit notes from data"
+                  }}
+                }} or "insufficient_evidence"
+              }},
+              "geographic_insights": {{
+                "by_campaign": {{
+                  "campaign_id": {{
+                    "top_geos": [list from data],
+                    "performance_notes": "explicit notes"
+                  }}
+                }} or "insufficient_evidence"
+              }},
+              "budget_data": {{
+                "total_budget": number or "insufficient_evidence",
+                "by_campaign": {{}} or "insufficient_evidence"
+              }},
+              "objectives": [array of explicit goals stated] or "insufficient_evidence",
+              "recommendations_from_data": [array of recommendations explicitly provided in artifacts] or "insufficient_evidence"
+            }}
+
+            MUST return valid JSON. Mark missing data as "insufficient_evidence", never infer or suggest.
             """
 
             logger.info("🤖 Sending feature extraction request to configured LLM")
@@ -381,14 +439,14 @@ class GeminiOrchestrator:
     async def generate_insights(self, features: Dict[str, Any]) -> Dict[str, Any]:
         """Generate k=5 insight candidates, score, and select top 3 (NO patch)"""
         try:
-            from .mechanics_cheat_sheet import MECHANICS_CHEAT_SHEET
-            from .insights_selector import (
+            from mechanics_cheat_sheet import MECHANICS_CHEAT_SHEET
+            from insights_selector import (
                 select_top_insights,
                 validate_insight_structure,
                 count_data_support_distribution,
                 calculate_insufficient_evidence_rate
             )
-            from .logging_metrics import LLMMetrics
+            from logging_metrics import LLMMetrics
             import uuid
 
             start_time = time.time()
@@ -403,32 +461,110 @@ As a Marketing Strategy Insights Expert, analyze these extracted features and ge
 
 Features: {json.dumps(features, indent=2)}
 
+**SPARSE DATA = LEARNING OPPORTUNITY (CRITICAL FOR SCORING)**
+
+When data is insufficient (data_support="weak"), you MUST design structured experiments.
+Well-designed experiments score 70-85 points. Vague recommendations score 30-45 points.
+
+MANDATORY for weak insights:
+1. Budget cap: Include specific $ amount (e.g., "$500 budget cap")
+2. Timeline: Include duration (e.g., "14-day experiment", "7-day pilot")
+3. Success metrics: Include what to measure (e.g., "measure CTR and ROAS daily")
+4. Learning keywords: MUST use at least one: pilot, test, experiment, A/B, validate, trial
+
+If you forget these, you will lose 2 points (penalty).
+
 **CRITICAL RULES:**
 1. Base all claims on evidence present in features. If insufficient data, set data_support="weak"
 2. Each insight must target exactly ONE primary lever from: audience, creative, budget, bidding, funnel
-3. Include expected_effect with direction (increase/decrease) + magnitude (small/medium/large)
-4. Add evidence_refs pointing to specific feature fields that support your claim
+3. Include expected_effect with direction (increase/decrease) + magnitude (small/medium/large) + concrete range
+4. Add evidence_refs with SPECIFIC paths: "features.metrics.campaigns.camp_002.roas" (not generic)
 5. If data_support="weak", propose learn/test action (pilot, A/B test, limited budget experiment)
-6. Provide contrastive reasoning: explain why you recommend X instead of alternative Y
+6. Provide contrastive reasoning: explain why you recommend X instead of alternative Y with specific tradeoffs
 
-Generate 5 insight candidates. For each candidate, return this exact JSON structure:
-
+**EXAMPLE - Strong Insight (data_support="strong"):**
 {{
-  "insight": "Observable pattern or anomaly from the data",
-  "hypothesis": "Causal explanation for why this pattern exists",
-  "proposed_action": "Specific, actionable recommendation",
-  "primary_lever": "audience" | "creative" | "budget" | "bidding" | "funnel",
+  "insight": "Camp_002 achieves 6.99 average ROAS (2.0x higher than Camp_001's 3.54 ROAS) while targeting SMB decision makers age 35-50",
+  "hypothesis": "Testimonial-based creative format resonates stronger with business purchase decision makers compared to product-focused imagery targeting younger professionals",
+  "proposed_action": "Reallocate $1,875 (25% of total budget) from Camp_001 to Camp_002 over 7-day period, maintaining current SMB targeting and testimonial creative",
+  "primary_lever": "budget",
   "expected_effect": {{
-    "direction": "increase" | "decrease",
-    "metric": "CTR" | "conversion_rate" | "CPA" | "ROAS" | "engagement_rate" | etc,
-    "magnitude": "small" | "medium" | "large",
-    "range": "Optional: e.g., 10-20%"
+    "direction": "increase",
+    "metric": "ROAS",
+    "magnitude": "medium",
+    "range": "15-25% improvement in blended portfolio ROAS (from ~4.5 to 5.2-5.6)"
   }},
-  "confidence": 0.0 to 1.0,
-  "data_support": "strong" | "moderate" | "weak",
-  "evidence_refs": ["features.field_name", "features.another_field"],
-  "contrastive_reason": "Why this recommendation vs why not alternative approach"
+  "confidence": 0.82,
+  "data_support": "strong",
+  "evidence_refs": [
+    "features.metrics.campaigns.camp_002.roas",
+    "features.metrics.campaigns.camp_001.roas",
+    "features.target_audience.segments.camp_002.age_range",
+    "features.creative_performance.by_campaign.camp_002.creative_type"
+  ],
+  "contrastive_reason": "Budget reallocation provides immediate ROAS lift (7-day implementation) vs creative testing which requires 14-21 day learning period and introduces execution risk"
 }}
+
+**EXAMPLE - Moderate Insight (data_support="moderate"):**
+{{
+  "insight": "Camp_001 performs best in coastal cities (SF, NYC, Seattle) with 2.5% CTR vs 1.8% national average for Camp_003",
+  "hypothesis": "Urban young professionals in tech hubs respond better to product-focused messaging due to higher tech affinity",
+  "proposed_action": "Narrow Camp_001 geo-targeting to top 5 coastal metro areas, increase bid by 15% in these geos to capture impression share",
+  "primary_lever": "audience",
+  "expected_effect": {{
+    "direction": "increase",
+    "metric": "CTR",
+    "magnitude": "small",
+    "range": "8-12% CTR improvement (from 2.4% to 2.6-2.7%)"
+  }},
+  "confidence": 0.68,
+  "data_support": "moderate",
+  "evidence_refs": [
+    "features.geographic_insights.by_campaign.camp_001.top_geos",
+    "features.metrics.campaigns.camp_001.ctr",
+    "features.target_audience.segments.camp_001.location"
+  ],
+  "contrastive_reason": "Geo-narrowing reduces waste vs expanding to new geos (unknown performance, higher risk of dilution)"
+}}
+
+**EXAMPLE - Weak Data + Strong Learning Plan (data_support="weak" - scores 70-85):**
+{{
+  "insight": "Camp_003 has 1.8% CTR but only 3 days of scattered data across all markets with no clear geographic pattern",
+  "hypothesis": "Broad demographic targeting (18-55) and generic brand messaging lacks audience-message fit, but insufficient data to identify which segments respond best",
+  "proposed_action": "Run 14-day pilot experiment: Split Camp_003 into 3 age segments (18-25, 26-40, 41-55), allocate $500 budget cap per segment ($1500 total), test current creative with each segment, measure CTR and ROAS daily via platform analytics to identify top-performing segment for next-cycle optimization",
+  "primary_lever": "audience",
+  "expected_effect": {{
+    "direction": "increase",
+    "metric": "data_completeness and ROAS",
+    "magnitude": "medium",
+    "range": "After 14 days: identify 1-2 segments with >2.0 ROAS, enabling focused budget reallocation in next cycle"
+  }},
+  "confidence": 0.40,
+  "data_support": "weak",
+  "evidence_refs": [
+    "features.geographic_insights.by_campaign.camp_003.performance_notes",
+    "features.metrics.campaigns.camp_003.ctr"
+  ],
+  "contrastive_reason": "Structured multi-segment pilot experiment ($1500 total, 14 days) provides statistical evidence for next cycle vs guessing best segment blindly (high risk, $3000+ wasted) or waiting passively for organic data (unknown timeline, delays optimization)"
+}}
+
+NOTE: This example includes ALL 4 mandatory elements: "$500 budget cap" (budget), "14-day pilot" (timeline), "measure CTR and ROAS daily" (metrics), "pilot experiment" (learning keyword). This scores 77 points.
+
+Generate 5 insight candidates following these examples. Each MUST have:
+- Specific numbers from features (not "high ROAS" but "6.99 ROAS")
+- Concrete action steps with timelines
+- Expected effect ranges (not just "medium" but "15-25%")
+- Specific evidence paths (not "features.metrics" but "features.metrics.campaigns.camp_002.roas")
+- Tradeoff analysis in contrastive_reason
+
+**REMINDER FOR WEAK DATA INSIGHTS:**
+If data_support="weak", your proposed_action MUST include:
+1. A learning keyword (pilot/test/experiment/A/B/validate/trial)
+2. A budget cap (e.g., "$500 budget cap")
+3. A timeline (e.g., "14-day experiment")
+4. Success metrics (e.g., "measure CTR daily")
+
+Missing these = -2 point penalty. Including all 4 = +5 point bonus.
 
 Return JSON with:
 {{
@@ -518,9 +654,9 @@ DO NOT include a "patch" field. DO NOT speculate beyond what evidence supports.
     async def generate_patch(self, insights: Dict[str, Any]) -> Dict[str, Any]:
         """Generate StrategyPatch from insights with heuristic filters and sanity gate"""
         try:
-            from .heuristic_filters import HeuristicFilters
-            from .sanity_gate import SanityGate
-            from .logging_metrics import LLMMetrics
+            from heuristic_filters import HeuristicFilters
+            from sanity_gate import SanityGate
+            from logging_metrics import LLMMetrics
             import uuid
 
             start_time = time.time()
@@ -544,50 +680,181 @@ DO NOT include a "patch" field. DO NOT speculate beyond what evidence supports.
                 }
 
             prompt = f"""
-Based on these strategic insights, create a StrategyPatch that implements the recommendations:
+Based on these strategic insights, create an ACTIONABLE StrategyPatch with specific numbers, timelines, and implementation steps:
 
 Insights:
 {json.dumps(insights_list, indent=2)}
 
-Create a comprehensive strategy patch with the following structure:
+**PATCH TYPES:**
+- "optimization": Strong data insights → direct budget/targeting changes for immediate gains
+- "experimental": Weak data insights → structured tests to gather data for next cycle
 
+If ANY insight has data_support="weak" with experiment/pilot/test proposal → set strategy_type="experimental"
+
+**CRITICAL RULES:**
+1. Use SPECIFIC NUMBERS from insights (not "increase budget" but "increase by $1,875 to $4,125")
+2. Include implementation timeline (e.g., "7-day gradual rollout", "immediate change")
+3. Budget shifts must be ≤25% from current baseline
+4. Limit to ≤3 key themes per audience segment
+5. No overlapping geo+age combinations in segments
+6. Include success metrics to track (with target numbers)
+7. For experimental patches: MUST include experiment_details and ai_recommendations
+
+**EXAMPLE - Good Actionable Patch:**
 {{
   "audience_targeting": {{
     "segments": [
       {{
-        "name": "segment name",
-        "demographics": {{"age": "range", "location": "geo"}},
-        "interests": ["interest1", "interest2"],
-        "behaviors": ["behavior1", "behavior2"]
+        "name": "SMB Decision Makers - Midwest",
+        "demographics": {{
+          "age": "35-50",
+          "location": ["Chicago", "Minneapolis", "Denver"],
+          "job_function": "business decision maker"
+        }},
+        "current_performance": "6.99 ROAS average",
+        "action": "EXPAND: Increase budget from $1,850 to $4,125 (+123%)",
+        "implementation": "7-day gradual rollout to avoid delivery disruption"
+      }},
+      {{
+        "name": "Young Professionals - Coastal Cities",
+        "demographics": {{
+          "age": "25-35",
+          "location": ["San Francisco", "New York", "Seattle"]
+        }},
+        "current_performance": "3.54 ROAS average",
+        "action": "MAINTAIN: Keep budget at $2,400, optimize geo-targeting to top 3 cities only",
+        "implementation": "Immediate geo-restriction, monitor for 3 days"
       }}
     ],
-    "exclusions": ["excluded groups"],
-    "lookalike_audiences": ["seed audience descriptions"]
+    "exclusions": ["Overlapping age ranges in same geos"],
+    "rationale": "Focus on highest ROAS segment (SMB) while maintaining presence in secondary segment"
   }},
   "messaging_strategy": {{
-    "primary_message": "Core value proposition",
-    "tone": "brand voice description",
-    "key_themes": ["theme1", "theme2", "theme3"],
-    "call_to_action": "CTA text"
+    "primary_message": "Proven results through customer testimonials",
+    "tone": "Professional, data-driven, trust-building",
+    "key_themes": [
+      "Customer success stories (testimonial-based)",
+      "ROI proof points (specific ROAS numbers)",
+      "Industry expertise (B2B focus)"
+    ],
+    "call_to_action": "See How [Customer] Achieved 7x ROAS",
+    "implementation_notes": "Repurpose Camp_002 testimonial creative for expanded reach"
   }},
   "channel_strategy": {{
-    "primary_channels": ["channel1", "channel2"],
-    "budget_split": {{"channel1": "40%", "channel2": "60%"}},
-    "scheduling": {{"timing": "description", "frequency": "description"}}
+    "primary_channels": ["Paid Search", "LinkedIn Ads"],
+    "budget_split": {{
+      "Paid Search": "60% ($4,500) - highest ROAS channel",
+      "LinkedIn Ads": "40% ($3,000) - B2B audience match"
+    }},
+    "scheduling": {{
+      "timing": "Weekday business hours (9am-5pm local time)",
+      "frequency": "Max 3 impressions per user per week to avoid fatigue"
+    }},
+    "implementation": "Week 1: 50/50 split for baseline, Week 2+: Shift to 60/40 based on performance"
   }},
   "budget_allocation": {{
-    "total_budget": "$XXXXX",
-    "channel_breakdown": {{"channel1": "40%", "channel2": "60%"}},
-    "optimization_strategy": "description of budget optimization approach"
+    "total_budget": "$7,500",
+    "current_allocation": {{
+      "Camp_001": "$2,400 (32%)",
+      "Camp_002": "$1,850 (25%)",
+      "Camp_003": "$3,250 (43%)"
+    }},
+    "new_allocation": {{
+      "Camp_001": "$2,400 (32%) - MAINTAIN",
+      "Camp_002": "$4,125 (55%) - INCREASE $2,275 (+123%)",
+      "Camp_003": "$975 (13%) - DECREASE $2,275 (-70%)"
+    }},
+    "total_shift": "25% budget reallocation (within threshold)",
+    "optimization_strategy": "Shift from underperforming broad reach (Camp_003 ROAS 1.42) to highest performer (Camp_002 ROAS 6.99)",
+    "implementation_timeline": "7-day gradual rollout: Day 1-2 (10% shift), Day 3-5 (15% shift), Day 6-7 (full 25%)"
+  }},
+  "success_metrics": {{
+    "primary_kpi": {{
+      "metric": "Blended Portfolio ROAS",
+      "baseline": "4.30 (current average)",
+      "target": "5.15-5.45 (20-27% improvement)",
+      "measurement_window": "14 days post-implementation"
+    }},
+    "secondary_kpis": [
+      {{
+        "metric": "Camp_002 daily spend",
+        "target": "$589 per day (up from $617 avg)",
+        "tracking": "Daily monitoring for delivery issues"
+      }},
+      {{
+        "metric": "Camp_003 ROAS improvement",
+        "target": ">2.0 ROAS with reduced budget (quality over volume)",
+        "tracking": "Weekly review for 3 weeks"
+      }}
+    ]
   }}
 }}
 
-CRITICAL RULES:
-1. Implement the recommendations from the insights
-2. Budget shifts should be ≤25% from baseline (if known)
-3. Limit to ≤3 key themes per audience segment
-4. Ensure no overlapping geo+age combinations in segments
-5. Base all recommendations on the evidence from insights
+**EXAMPLE - Experimental Strategy Patch (for weak data insights):**
+{{
+  "strategy_type": "experimental",
+  "experiment_details": {{
+    "objective": "Identify highest-performing audience segment for Camp_003",
+    "hypothesis": "Younger segments (18-25) will show higher CTR, older segments (41-55) will show higher ROAS",
+    "method": "Audience segmentation A/B test",
+    "duration": "14 days",
+    "total_budget": "$1,500",
+    "success_metrics": [
+      "CTR by segment (target: >2.0% for at least one segment)",
+      "ROAS by segment (target: >2.5 for at least one segment)",
+      "Statistical significance (p<0.05)"
+    ],
+    "decision_criteria": "After 14 days: Reallocate Camp_003 budget to top-performing segment(s), or discontinue if all segments show ROAS <1.5"
+  }},
+  "ai_recommendations": {{
+    "rationale": "Current Camp_003 data shows scattered performance (1.8% CTR, 1.42 ROAS) with only 3 days of data. Running controlled experiment provides statistical evidence for next-cycle optimization decisions.",
+    "learning_value": "Identifies which demographic segments respond to brand messaging, enabling targeted creative and budget allocation in Cycle 2",
+    "next_steps_after_experiment": [
+      "If segment 18-25 wins: Reallocate 60% of Camp_003 budget to this segment, test product-focused creative",
+      "If segment 41-55 wins: Maintain current creative, increase budget by 25%",
+      "If no segment wins: Discontinue Camp_003, reallocate budget to Camp_002 (proven 6.99 ROAS)"
+    ]
+  }},
+  "audience_targeting": {{
+    "segments": [
+      {{
+        "name": "Young Adults (18-25) - Camp_003 Experimental",
+        "demographics": {{"age": "18-25", "location": "national"}},
+        "action": "NEW: Allocate $500 for 14-day test",
+        "implementation": "Launch as separate ad set to isolate metrics"
+      }},
+      {{
+        "name": "Mid-Career (26-40) - Camp_003 Experimental",
+        "demographics": {{"age": "26-40", "location": "national"}},
+        "action": "NEW: Allocate $500 for 14-day test",
+        "implementation": "Launch as separate ad set to isolate metrics"
+      }},
+      {{
+        "name": "Established (41-55) - Camp_003 Experimental",
+        "demographics": {{"age": "41-55", "location": "national"}},
+        "action": "NEW: Allocate $500 for 14-day test",
+        "implementation": "Launch as separate ad set to isolate metrics"
+      }}
+    ]
+  }},
+  "budget_allocation": {{
+    "total_budget": "$1,500 (experimental allocation)",
+    "new_allocation": {{
+      "Camp_003_Segment_A (18-25)": "$500 (33%)",
+      "Camp_003_Segment_B (26-40)": "$500 (33%)",
+      "Camp_003_Segment_C (41-55)": "$500 (33%)"
+    }},
+    "implementation_timeline": "Day 1: Launch all 3 segments simultaneously, Day 14: Analyze results and decide next action"
+  }}
+}}
+
+Create a strategy patch following this format. MUST include:
+- Specific dollar amounts and percentages
+- Implementation timelines (days/weeks)
+- Current vs new state comparisons
+- Success metrics with baseline and targets
+- Rationale tied to insight evidence
+- For experimental patches: experiment_details and ai_recommendations sections
 
 Return ONLY the StrategyPatch JSON, no additional commentary.
 """
@@ -904,9 +1171,9 @@ Return ONLY the StrategyPatch JSON, no additional commentary.
     async def edit_patch_with_llm(self, patch_id: str, edit_request: str, original_patch: Dict[str, Any] = None) -> Dict[str, Any]:
         """Edit strategy patch based on user feedback with minimal delta and validation"""
         try:
-            from .heuristic_filters import HeuristicFilters
-            from .sanity_gate import SanityGate
-            from .logging_metrics import LLMMetrics
+            from heuristic_filters import HeuristicFilters
+            from sanity_gate import SanityGate
+            from logging_metrics import LLMMetrics
 
             start_time = time.time()
             job_id = str(uuid.uuid4())

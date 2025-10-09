@@ -13,12 +13,17 @@ def score_insight(insight: Dict[str, Any]) -> int:
     """
     Deterministic scoring rubric for insight quality (no external data)
 
-    Scoring rules:
+    Scoring rules (max ~13 points → scaled to 100):
     - +2 if evidence_refs present
     - +2 if data_support == 'strong', +1 if 'moderate'
     - +1 if expected_effect has both direction AND magnitude
     - +1 if single primary_lever is targeted
-    - -1 if data_support='weak' without learn/test action
+    - NEW: Learning-oriented scoring for weak data:
+      - +3 if weak support WITH test/experiment proposal
+      - +2 more if experiment is well-structured (budget + timeline + metrics)
+      - -2 if weak support WITHOUT learning plan (penalty)
+
+    This rewards proactive learning over passive waiting.
 
     Args:
         insight: Insight dictionary with required fields
@@ -53,19 +58,34 @@ def score_insight(insight: Dict[str, Any]) -> int:
         score += 1
         logger.debug(f"[SCORE] +1 for valid primary_lever: {primary_lever}")
 
-    # Penalize insufficient evidence without learn/test action (max -1)
+    # NEW: Reward learning plans for weak data (max +5 bonus, or -2 penalty)
     if data_support == 'weak':
         proposed_action = insight.get('proposed_action', '').lower()
         learn_test_keywords = ['pilot', 'test', 'experiment', 'trial', 'a/b', 'validate']
 
-        if not any(kw in proposed_action for kw in learn_test_keywords):
-            score -= 1
-            logger.warning(f"[SCORE] -1 for weak data_support without learn/test action: {proposed_action}")
-        else:
-            logger.debug(f"[SCORE] No penalty - weak support with learn/test action: {proposed_action}")
+        if any(kw in proposed_action for kw in learn_test_keywords):
+            # +3 bonus for proposing learning action
+            score += 3
+            logger.info(f"[SCORE] +3 BONUS for weak support WITH learning plan")
 
-    # Normalize to 0-100 range (max possible score is ~8, scale up)
-    normalized_score = int(min(max(score * 12.5, 0), 100))  # Scale: 8 * 12.5 = 100
+            # +2 more if well-structured (budget cap + timeline + success metrics)
+            has_budget_cap = any(s in proposed_action for s in ['$', 'budget cap', 'budget limit', 'spend limit'])
+            has_timeline = any(s in proposed_action for s in ['day', 'week', '-day', 'period'])
+            has_metrics = any(s in proposed_action for s in ['measure', 'track', 'monitor', 'kpi', 'metric'])
+
+            structure_count = sum([has_budget_cap, has_timeline, has_metrics])
+            if structure_count >= 2:
+                score += 2
+                logger.info(f"[SCORE] +2 BONUS for well-structured experiment (has {structure_count}/3: budget, timeline, metrics)")
+            else:
+                logger.debug(f"[SCORE] Experiment has {structure_count}/3 structure elements")
+        else:
+            # Penalty for weak data without learning plan
+            score -= 2
+            logger.warning(f"[SCORE] -2 PENALTY for weak data_support without learn/test action: {proposed_action[:50]}...")
+
+    # Normalize to 0-100 range (max possible score is now ~13, scale appropriately)
+    normalized_score = int(min(max(score * 7.7, 0), 100))  # Scale: 13 * 7.7 ≈ 100
 
     logger.info(f"[SCORE] Final score: {normalized_score} (raw: {score}) for insight: {insight.get('insight', 'N/A')[:50]}...")
 

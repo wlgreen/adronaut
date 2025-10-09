@@ -1,0 +1,33 @@
+campaign_id,date,impressions,clicks,conversions,spend,revenue,ctr,cpa,roas
+camp_001,2025-01-01,50000,1200,85,2400,8500,2.4%,28.24,3.54
+camp_001,2025-01-02,52000,1350,92,2500,9200,2.6%,27.17,3.68
+camp_002,2025-01-01,35000,950,125,1800,12500,2.7%,14.40,6.94
+camp_002,2025-01-02,38000,1050,135,1900,13500,2.8%,14.07,7.11
+camp_003,2025-01-01,45000,800,45,3200,4500,1.8%,71.11,1.41
+
+Audience Segment Analysis:
+- Camp_001 targeting: Young professionals (25-35), urban areas - ONLY 2 DAYS OF DATA
+- Camp_002 targeting: SMB decision makers (35-50), suburban/urban mix - ONLY 2 DAYS, unclear if pattern holds
+- Camp_003 targeting: Broad reach (18-55), national - ONLY 1 DAY, cannot determine anything
+
+Creative Performance:
+- Camp_001 creative: Product-focused imagery - insufficient data to confirm performance
+- Camp_002 creative: Case study videos - looks promising but sample too small
+- Camp_003 creative: Brand awareness ads - 1 day shows poor CTR but statistically meaningless
+
+Geographic Insights:
+- Camp_001: Insufficient geographic breakdown
+- Camp_002: No geographic pattern visible yet
+- Camp_003: No data available
+
+Data Gaps:
+- Missing: Time-of-day performance, device breakdown, audience segment conversion rates
+- Need: At least 7-14 days to establish patterns
+- Recommended: Run controlled experiments to gather targeted data
+
+Recommendations:
+- DO NOT make major budget shifts with <3 days of data
+- Propose structured experiments to test hypotheses:
+  * Test Camp_002 creative with other audiences (controlled A/B test)
+  * Segment Camp_003 by age groups to identify responsive demographics
+  * Run geo-holdout experiments to validate Camp_001 coastal performance claim

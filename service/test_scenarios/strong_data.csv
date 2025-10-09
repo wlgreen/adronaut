@@ -1,0 +1,51 @@
+campaign_id,date,impressions,clicks,conversions,spend,revenue,ctr,cpa,roas
+camp_001,2025-01-01,50000,1200,85,2400,8500,2.4%,28.24,3.54
+camp_001,2025-01-02,52000,1350,92,2500,9200,2.6%,27.17,3.68
+camp_001,2025-01-03,48000,1100,78,2300,7800,2.3%,29.49,3.39
+camp_001,2025-01-04,51000,1280,88,2450,8800,2.5%,27.84,3.59
+camp_001,2025-01-05,49000,1220,84,2380,8400,2.5%,28.33,3.53
+camp_001,2025-01-06,53000,1390,95,2520,9500,2.6%,26.53,3.77
+camp_001,2025-01-07,50500,1250,86,2420,8600,2.5%,28.14,3.55
+camp_001,2025-01-08,51500,1310,90,2480,9000,2.5%,27.56,3.63
+camp_001,2025-01-09,49500,1190,82,2360,8200,2.4%,28.78,3.47
+camp_001,2025-01-10,52500,1340,93,2510,9300,2.6%,26.99,3.71
+camp_002,2025-01-01,35000,950,125,1800,12500,2.7%,14.40,6.94
+camp_002,2025-01-02,38000,1050,135,1900,13500,2.8%,14.07,7.11
+camp_002,2025-01-03,36000,980,128,1850,12800,2.7%,14.45,6.92
+camp_002,2025-01-04,37000,1020,132,1880,13200,2.8%,14.24,7.02
+camp_002,2025-01-05,36500,990,130,1870,13000,2.7%,14.38,6.95
+camp_002,2025-01-06,39000,1080,140,1950,14000,2.8%,13.93,7.18
+camp_002,2025-01-07,37500,1010,133,1890,13300,2.7%,14.21,7.04
+camp_002,2025-01-08,38500,1060,137,1920,13700,2.8%,14.01,7.14
+camp_002,2025-01-09,36800,995,129,1865,12900,2.7%,14.46,6.92
+camp_002,2025-01-10,39500,1090,142,1970,14200,2.8%,13.87,7.21
+camp_003,2025-01-01,45000,800,45,3200,4500,1.8%,71.11,1.41
+camp_003,2025-01-02,47000,850,48,3300,4800,1.8%,68.75,1.45
+camp_003,2025-01-03,46000,820,46,3250,4600,1.8%,70.65,1.42
+camp_003,2025-01-04,46500,830,47,3275,4700,1.8%,69.68,1.44
+camp_003,2025-01-05,45500,810,45,3225,4500,1.8%,71.67,1.40
+camp_003,2025-01-06,48000,870,50,3350,5000,1.8%,67.00,1.49
+camp_003,2025-01-07,46800,840,48,3290,4800,1.8%,68.54,1.46
+camp_003,2025-01-08,47200,855,49,3310,4900,1.8%,67.55,1.48
+camp_003,2025-01-09,45800,815,46,3240,4600,1.8%,70.43,1.42
+camp_003,2025-01-10,48500,880,51,3370,5100,1.8%,66.08,1.51
+
+Audience Segment Analysis:
+- Camp_001 targeting: Young professionals (25-35), urban coastal areas (SF, NYC, Seattle), high engagement
+- Camp_002 targeting: SMB decision makers (35-50), midwest markets (Chicago, Minneapolis, Denver), highest ROAS with 10 days of consistent data
+- Camp_003 targeting: Broad reach (18-55), national, underperforming CTR and ROAS with 10 days showing no improvement
+
+Creative Performance:
+- Camp_001 creative: Product-focused imagery, value proposition messaging, consistent 2.4-2.6% CTR
+- Camp_002 creative: Case study videos, testimonial-based, best conversion rate (3.6 avg conversions/day), 7.0 avg ROAS
+- Camp_003 creative: Brand awareness ads, generic messaging, low CTR stuck at 1.8%
+
+Geographic Insights:
+- Camp_001: Best in coastal cities with 10 days confirming pattern
+- Camp_002: Strong in midwest markets with statistically significant performance
+- Camp_003: Scattered performance across all regions, no clear winner after 10 days
+
+Recommendations:
+- Reallocate 25% budget from Camp_003 to Camp_002 (proven 7.0 ROAS over 10 days)
+- Test Camp_002 creative approach with Camp_001 audience
+- Consider discontinuing Camp_003 given 10 days of poor performance

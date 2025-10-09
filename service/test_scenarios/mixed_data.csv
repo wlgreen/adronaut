@@ -1,0 +1,38 @@
+campaign_id,date,impressions,clicks,conversions,spend,revenue,ctr,cpa,roas
+camp_001,2025-01-01,50000,1200,85,2400,8500,2.4%,28.24,3.54
+camp_001,2025-01-02,52000,1350,92,2500,9200,2.6%,27.17,3.68
+camp_001,2025-01-03,48000,1100,78,2300,7800,2.3%,29.49,3.39
+camp_001,2025-01-04,51000,1280,88,2450,8800,2.5%,27.84,3.59
+camp_001,2025-01-05,49000,1220,84,2380,8400,2.5%,28.33,3.53
+camp_001,2025-01-06,53000,1390,95,2520,9500,2.6%,26.53,3.77
+camp_001,2025-01-07,50500,1250,86,2420,8600,2.5%,28.14,3.55
+camp_002,2025-01-01,35000,950,125,1800,12500,2.7%,14.40,6.94
+camp_002,2025-01-02,38000,1050,135,1900,13500,2.8%,14.07,7.11
+camp_002,2025-01-03,36000,980,128,1850,12800,2.7%,14.45,6.92
+camp_003,2025-01-01,45000,800,45,3200,4500,1.8%,71.11,1.41
+camp_003,2025-01-02,47000,850,48,3300,4800,1.8%,68.75,1.45
+
+Audience Segment Analysis:
+- Camp_001 targeting: Young professionals (25-35), urban coastal areas - 7 DAYS of strong data showing consistent 2.4-2.6% CTR
+- Camp_002 targeting: SMB decision makers (35-50), midwest markets - ONLY 3 DAYS, early signals of 7.0 ROAS but needs validation
+- Camp_003 targeting: Broad reach (18-55), national - ONLY 2 DAYS, statistically insignificant
+
+Creative Performance:
+- Camp_001 creative: Product-focused imagery - 7 days confirms stable 3.5 avg ROAS
+- Camp_002 creative: Case study videos - 3 days shows promising 7.0 ROAS, but too early to confirm
+- Camp_003 creative: Brand awareness ads - 2 days of poor 1.8% CTR, unclear if trend or noise
+
+Geographic Insights:
+- Camp_001: 7 days confirms coastal cities (SF, NYC, Seattle) outperform - STRONG SIGNAL
+- Camp_002: 3 days in midwest looks good but sample size insufficient - MODERATE SIGNAL
+- Camp_003: 2 days scattered, no pattern - WEAK SIGNAL
+
+Data Quality Assessment:
+- Camp_001: STRONG (7 days, consistent pattern)
+- Camp_002: MODERATE (3 days, promising but needs more data)
+- Camp_003: WEAK (2 days, insufficient for decisions)
+
+Recommendations:
+- Camp_001: Can confidently optimize geo-targeting based on 7-day pattern
+- Camp_002: Run 7-day validation experiment before scaling (extend to 10+ days total)
+- Camp_003: Run structured audience segmentation experiment (14-day test with budget caps)
