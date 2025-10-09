@@ -8,6 +8,7 @@ import json
 import uuid
 import logging
 import re
+import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -15,6 +16,16 @@ import google.generativeai as genai
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 logger = logging.getLogger(__name__)
+
+# Task-specific temperature configuration for determinism
+TASK_TEMPERATURES = {
+    'FEATURES': 0.2,     # Deterministic extraction
+    'INSIGHTS': 0.35,    # Moderate creativity for hypotheses
+    'PATCH': 0.2,        # Deterministic patch generation
+    'EDIT': 0.2,         # Minimal changes only
+    'BRIEF': 0.3,        # Slightly creative for brief
+    'ANALYZE': 0.35      # Moderate for performance analysis
+}
 
 class GeminiOrchestrator:
     """Simple orchestrator using native Gemini API"""
@@ -60,14 +71,14 @@ class GeminiOrchestrator:
             raise ValueError("Either GEMINI_API_KEY or OPENAI_API_KEY environment variable is required")
 
         # Per-task LLM configuration with defaults
-        # Format: provider:model (e.g., "gemini:gemini-2.5-pro" or "openai:gpt-5")
+        # Format: provider:model (e.g., "gemini:gemini-2.5-flash" or "openai:gpt-4o")
         self.task_llm_config = {
-            'FEATURES': os.getenv('LLM_FEATURES', 'gemini:gemini-2.5-pro'),
-            'INSIGHTS': os.getenv('LLM_INSIGHTS', 'openai:gpt-5'),
-            'PATCH_PROPOSED': os.getenv('LLM_PATCH', 'openai:gpt-5'),
-            'BRIEF': os.getenv('LLM_BRIEF', 'gemini:gemini-2.5-pro'),
-            'ANALYZE': os.getenv('LLM_ANALYZE', 'openai:gpt-5'),
-            'EDIT': os.getenv('LLM_EDIT', 'openai:gpt-5'),
+            'FEATURES': os.getenv('LLM_FEATURES', 'gemini:gemini-2.5-flash'),
+            'INSIGHTS': os.getenv('LLM_INSIGHTS', 'gemini:gemini-2.5-flash'),
+            'PATCH_PROPOSED': os.getenv('LLM_PATCH', 'gemini:gemini-2.5-flash'),
+            'BRIEF': os.getenv('LLM_BRIEF', 'gemini:gemini-2.5-flash'),
+            'ANALYZE': os.getenv('LLM_ANALYZE', 'gemini:gemini-2.5-flash'),
+            'EDIT': os.getenv('LLM_EDIT', 'gemini:gemini-2.5-flash'),
         }
 
         # Initialize Gemini if we have the key
@@ -75,8 +86,8 @@ class GeminiOrchestrator:
         if self.gemini_api_key:
             try:
                 genai.configure(api_key=self.gemini_api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-2.5-pro')
-                logger.info("✅ Gemini API configured with model: gemini-2.5-pro")
+                self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+                logger.info("✅ Gemini API configured with model: gemini-2.5-flash")
             except Exception as e:
                 logger.error(f"❌ Failed to configure Gemini API: {e}")
 
@@ -102,41 +113,87 @@ class GeminiOrchestrator:
 
     async def _call_llm(self, task: str, prompt: str) -> str:
         """
-        Call the configured LLM for the given task
+        Call the configured LLM for the given task with temperature control
         Args:
-            task: Task name (FEATURES, INSIGHTS, PATCH_PROPOSED, etc.)
+            task: Task name (FEATURES, INSIGHTS, PATCH, etc.)
             prompt: The prompt to send to the LLM
         Returns:
             Response text from the LLM
         """
-        config = self.task_llm_config.get(task, 'gemini:gemini-2.5-pro')
+        from .logging_metrics import LLMMetrics
+
+        config = self.task_llm_config.get(task, 'gemini:gemini-2.5-flash')
         provider, model_name = config.split(':', 1)
+        temperature = TASK_TEMPERATURES.get(task, 0.3)
 
-        logger.info(f"🤖 [{task}] Using {provider}:{model_name}")
+        logger.info(f"🤖 [{task}] Using {provider}:{model_name} @ temperature={temperature}")
 
-        if provider == 'gemini':
-            if not self.gemini_model:
-                raise ValueError(f"Gemini model not initialized but required for task {task}")
-            response = self.gemini_model.generate_content(prompt)
-            return response.text
+        start_time = time.time()
+        prompt_length = len(prompt)
 
-        elif provider == 'openai':
-            if not self.openai_client:
-                raise ValueError(f"OpenAI client not initialized but required for task {task}")
+        try:
+            if provider == 'gemini':
+                if not self.gemini_model:
+                    raise ValueError(f"Gemini model not initialized but required for task {task}")
 
-            # Note: Some models like o1/gpt-5 only support default temperature (1.0)
-            # Don't set temperature to allow model defaults
-            response = self.openai_client.chat.completions.create(
+                # Gemini supports temperature control (0.0-2.0)
+                response = self.gemini_model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=temperature
+                    )
+                )
+                response_text = response.text
+
+            elif provider == 'openai':
+                if not self.openai_client:
+                    raise ValueError(f"OpenAI client not initialized but required for task {task}")
+
+                # OpenAI - use temperature if supported by model
+                # Note: o1/gpt-5 reasoning models don't support temperature (use Gemini instead)
+                response = self.openai_client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": "You are an expert marketing analyst AI."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=temperature
+                )
+                response_text = response.choices[0].message.content
+
+            else:
+                raise ValueError(f"Unknown LLM provider: {provider}")
+
+            # Log successful call
+            latency_ms = int((time.time() - start_time) * 1000)
+            LLMMetrics.log_llm_call(
+                task=task,
+                provider=provider,
                 model=model_name,
-                messages=[
-                    {"role": "system", "content": "You are an expert marketing analyst AI."},
-                    {"role": "user", "content": prompt}
-                ]
+                temperature=temperature,
+                latency_ms=latency_ms,
+                prompt_length=prompt_length,
+                response_length=len(response_text),
+                success=True
             )
-            return response.choices[0].message.content
 
-        else:
-            raise ValueError(f"Unknown LLM provider: {provider}")
+            return response_text
+
+        except Exception as e:
+            # Log failed call
+            latency_ms = int((time.time() - start_time) * 1000)
+            LLMMetrics.log_llm_call(
+                task=task,
+                provider=provider,
+                model=model_name,
+                temperature=temperature,
+                latency_ms=latency_ms,
+                prompt_length=prompt_length,
+                response_length=0,
+                success=False,
+                error=str(e)
+            )
+            raise
 
     async def extract_features(self, artifacts: List[Dict]) -> Dict[str, Any]:
         """Extract marketing features from uploaded artifacts"""
@@ -185,7 +242,9 @@ class GeminiOrchestrator:
 
             Artifacts Data: {json.dumps(artifact_summaries, indent=2)}
 
-            IMPORTANT: Even if the data is limited, provide your best analysis based on available information. Do not ask for more data.
+            CRITICAL: Base all claims on evidence present in the artifacts.
+            If data is insufficient for a claim, explicitly state "insufficient_evidence" in that field.
+            DO NOT speculate or guess. Only extract features that are directly supported by the artifact data.
 
             Extract the following marketing features:
             1. Target audience demographics
@@ -320,96 +379,317 @@ class GeminiOrchestrator:
             }
 
     async def generate_insights(self, features: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate strategic insights and patch recommendations"""
+        """Generate k=5 insight candidates, score, and select top 3 (NO patch)"""
         try:
-            logger.info("Generating strategic insights")
+            from .mechanics_cheat_sheet import MECHANICS_CHEAT_SHEET
+            from .insights_selector import (
+                select_top_insights,
+                validate_insight_structure,
+                count_data_support_distribution,
+                calculate_insufficient_evidence_rate
+            )
+            from .logging_metrics import LLMMetrics
+            import uuid
+
+            start_time = time.time()
+            job_id = str(uuid.uuid4())
+
+            logger.info(f"[JOB {job_id[:8]}] Generating insight candidates with mechanics-guided prompting")
 
             prompt = f"""
-            As a Marketing Strategy Insights Expert, analyze these extracted features and generate strategic recommendations:
+{MECHANICS_CHEAT_SHEET}
 
-            Features: {json.dumps(features, indent=2)}
+As a Marketing Strategy Insights Expert, analyze these extracted features and generate strategic insights:
 
-            Generate strategic insights including:
-            1. Market opportunity analysis
-            2. Audience targeting recommendations
-            3. Channel optimization suggestions
-            4. Messaging improvements
-            5. Budget allocation recommendations
-            6. Performance optimization strategies
+Features: {json.dumps(features, indent=2)}
 
-            Return your analysis as a JSON object with these keys:
-            - opportunities: array of market opportunities
-            - targeting_strategy: object with audience recommendations
-            - channel_strategy: object with channel optimization
-            - messaging_strategy: object with messaging improvements
-            - budget_strategy: object with budget recommendations
-            - performance_strategy: object with KPI and optimization recommendations
-            - patch: object containing specific strategy modifications to implement
-            - justification: string explaining the rationale for these recommendations
-            """
+**CRITICAL RULES:**
+1. Base all claims on evidence present in features. If insufficient data, set data_support="weak"
+2. Each insight must target exactly ONE primary lever from: audience, creative, budget, bidding, funnel
+3. Include expected_effect with direction (increase/decrease) + magnitude (small/medium/large)
+4. Add evidence_refs pointing to specific feature fields that support your claim
+5. If data_support="weak", propose learn/test action (pilot, A/B test, limited budget experiment)
+6. Provide contrastive reasoning: explain why you recommend X instead of alternative Y
 
-            logger.info("🤖 Sending insights request to configured LLM")
-            logger.info(f"📝 Request Details:")
-            logger.info(f"   - Prompt length: {len(prompt)} characters")
+Generate 5 insight candidates. For each candidate, return this exact JSON structure:
+
+{{
+  "insight": "Observable pattern or anomaly from the data",
+  "hypothesis": "Causal explanation for why this pattern exists",
+  "proposed_action": "Specific, actionable recommendation",
+  "primary_lever": "audience" | "creative" | "budget" | "bidding" | "funnel",
+  "expected_effect": {{
+    "direction": "increase" | "decrease",
+    "metric": "CTR" | "conversion_rate" | "CPA" | "ROAS" | "engagement_rate" | etc,
+    "magnitude": "small" | "medium" | "large",
+    "range": "Optional: e.g., 10-20%"
+  }},
+  "confidence": 0.0 to 1.0,
+  "data_support": "strong" | "moderate" | "weak",
+  "evidence_refs": ["features.field_name", "features.another_field"],
+  "contrastive_reason": "Why this recommendation vs why not alternative approach"
+}}
+
+Return JSON with:
+{{
+  "candidates": [... 5 insight objects ...]
+}}
+
+DO NOT include a "patch" field. DO NOT speculate beyond what evidence supports.
+"""
+
+            logger.info(f"📝 Insights prompt length: {len(prompt)} characters")
             logger.debug(f"📨 Full insights prompt:\n{prompt}")
 
+            # Call LLM @ temp=0.35 (moderate creativity for hypotheses)
             insights_text = await self._call_llm('INSIGHTS', prompt)
 
-            logger.info(f"✅ LLM insights response received")
-            logger.info(f"📤 Response length: {len(insights_text)} characters")
-            logger.debug(f"📋 Full insights response:\n{insights_text}")
-            logger.info(f"🔍 Insights preview: {insights_text[:200]}...")
+            logger.info(f"✅ LLM response received ({len(insights_text)} chars)")
+            logger.debug(f"📋 Full response:\n{insights_text}")
 
-            # Try to parse JSON response
+            # Parse JSON response
             try:
-                # Extract JSON from response (handling markdown code blocks)
                 clean_json = self._extract_json_from_response(insights_text)
                 if not clean_json:
                     raise json.JSONDecodeError("No JSON content found", insights_text, 0)
 
-                insights = json.loads(clean_json)
-                logger.info("✅ Successfully parsed insights JSON response")
-                logger.info(f"🔧 Insights structure:")
-                for key, value in insights.items():
-                    if isinstance(value, (dict, list)):
-                        logger.info(f"   - {key}: {type(value).__name__} with {len(value)} items")
-                    else:
-                        logger.info(f"   - {key}: {type(value).__name__}")
-                logger.debug(f"📊 Full parsed insights:\n{json.dumps(insights, indent=2)}")
-            except json.JSONDecodeError as e:
-                logger.error(f"❌ Insights JSON parsing failed: {e}")
-                logger.error(f"📄 Full insights response that failed to parse:\n{insights_text}")
-                # If JSON parsing fails, create a structured response
-                insights = {
-                    "opportunities": ["Strategic analysis pending"],
-                    "targeting_strategy": {"recommendations": "Analysis pending"},
-                    "channel_strategy": {"recommendations": "Analysis pending"},
-                    "messaging_strategy": {"recommendations": "Analysis pending"},
-                    "budget_strategy": {"recommendations": "Analysis pending"},
-                    "performance_strategy": {"recommendations": "Analysis pending"},
-                    "patch": {
-                        "strategy_updates": "Analysis pending",
-                        "tactical_changes": "Analysis pending"
-                    },
-                    "justification": "Strategic analysis in progress",
-                    "raw_analysis": insights_text
+                result = json.loads(clean_json)
+                candidates = result.get('candidates', [])
+
+                logger.info(f"📊 Received {len(candidates)} insight candidates")
+
+                # Validate and select top 3
+                valid_candidates = [c for c in candidates if validate_insight_structure(c)]
+                logger.info(f"✅ {len(valid_candidates)}/{len(candidates)} candidates passed validation")
+
+                if len(valid_candidates) < 3:
+                    logger.warning(f"⚠️ Only {len(valid_candidates)} valid candidates, expected ≥3")
+
+                top_3 = select_top_insights(valid_candidates, k=3)
+                logger.info(f"🎯 Selected top 3 insights with scores: {[i['impact_score'] for i in top_3]}")
+
+                # Calculate metrics for logging
+                latency_ms = int((time.time() - start_time) * 1000)
+                data_support_counts = count_data_support_distribution(top_3)
+                insufficient_rate = calculate_insufficient_evidence_rate(top_3)
+
+                # Log metrics
+                LLMMetrics.log_insights_job(
+                    job_id=job_id,
+                    latency_ms=latency_ms,
+                    temperature=TASK_TEMPERATURES['INSIGHTS'],
+                    candidate_count=len(candidates),
+                    selected_score=top_3[0]['impact_score'] if top_3 else 0,
+                    has_evidence_refs=any(len(i.get('evidence_refs', [])) > 0 for i in top_3),
+                    data_support_counts=data_support_counts,
+                    insufficient_evidence_rate=insufficient_rate
+                )
+
+                logger.info("✅ Strategic insights generated successfully (NO patch)")
+
+                # Return insights WITHOUT patch (breaking change from old flow)
+                return {
+                    'insights': top_3,
+                    'candidates_evaluated': len(candidates),
+                    'selection_method': 'deterministic_rubric'
                 }
 
-            logger.info("Strategic insights generated successfully")
-            return insights
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Insights JSON parsing failed: {e}")
+                logger.error(f"📄 Full response that failed to parse:\n{insights_text}")
+                # Return fallback with minimal structure
+                return {
+                    "insights": [],
+                    "candidates_evaluated": 0,
+                    "selection_method": "failed_parse",
+                    "error": str(e),
+                    "raw_analysis": insights_text
+                }
 
         except Exception as e:
             logger.error(f"Insights generation failed: {e}")
             return {
                 "error": str(e),
-                "opportunities": [],
-                "targeting_strategy": {},
-                "channel_strategy": {},
-                "messaging_strategy": {},
-                "budget_strategy": {},
-                "performance_strategy": {},
-                "patch": {},
-                "justification": "Analysis failed due to error"
+                "insights": [],
+                "candidates_evaluated": 0,
+                "selection_method": "failed_execution"
+            }
+
+    async def generate_patch(self, insights: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate StrategyPatch from insights with heuristic filters and sanity gate"""
+        try:
+            from .heuristic_filters import HeuristicFilters
+            from .sanity_gate import SanityGate
+            from .logging_metrics import LLMMetrics
+            import uuid
+
+            start_time = time.time()
+            job_id = str(uuid.uuid4())
+
+            logger.info(f"[JOB {job_id[:8]}] Generating strategy patch from insights")
+
+            # Extract the insights list from the insights response
+            insights_list = insights.get('insights', [])
+
+            if not insights_list:
+                logger.warning("⚠️ No insights provided for patch generation")
+                return {
+                    "error": "No insights available",
+                    "patch_json": {},
+                    "annotations": {
+                        "heuristic_flags": [],
+                        "sanity_flags": [],
+                        "requires_review": True
+                    }
+                }
+
+            prompt = f"""
+Based on these strategic insights, create a StrategyPatch that implements the recommendations:
+
+Insights:
+{json.dumps(insights_list, indent=2)}
+
+Create a comprehensive strategy patch with the following structure:
+
+{{
+  "audience_targeting": {{
+    "segments": [
+      {{
+        "name": "segment name",
+        "demographics": {{"age": "range", "location": "geo"}},
+        "interests": ["interest1", "interest2"],
+        "behaviors": ["behavior1", "behavior2"]
+      }}
+    ],
+    "exclusions": ["excluded groups"],
+    "lookalike_audiences": ["seed audience descriptions"]
+  }},
+  "messaging_strategy": {{
+    "primary_message": "Core value proposition",
+    "tone": "brand voice description",
+    "key_themes": ["theme1", "theme2", "theme3"],
+    "call_to_action": "CTA text"
+  }},
+  "channel_strategy": {{
+    "primary_channels": ["channel1", "channel2"],
+    "budget_split": {{"channel1": "40%", "channel2": "60%"}},
+    "scheduling": {{"timing": "description", "frequency": "description"}}
+  }},
+  "budget_allocation": {{
+    "total_budget": "$XXXXX",
+    "channel_breakdown": {{"channel1": "40%", "channel2": "60%"}},
+    "optimization_strategy": "description of budget optimization approach"
+  }}
+}}
+
+CRITICAL RULES:
+1. Implement the recommendations from the insights
+2. Budget shifts should be ≤25% from baseline (if known)
+3. Limit to ≤3 key themes per audience segment
+4. Ensure no overlapping geo+age combinations in segments
+5. Base all recommendations on the evidence from insights
+
+Return ONLY the StrategyPatch JSON, no additional commentary.
+"""
+
+            logger.info(f"📝 Patch prompt length: {len(prompt)} characters")
+            logger.debug(f"📨 Full patch prompt:\n{prompt}")
+
+            # Call LLM @ temp=0.2 (deterministic patch generation)
+            patch_text = await self._call_llm('PATCH', prompt)
+
+            logger.info(f"✅ LLM patch response received ({len(patch_text)} chars)")
+            logger.debug(f"📋 Full response:\n{patch_text}")
+
+            # Parse JSON response
+            try:
+                clean_json = self._extract_json_from_response(patch_text)
+                if not clean_json:
+                    raise json.JSONDecodeError("No JSON content found", patch_text, 0)
+
+                patch_json = json.loads(clean_json)
+                logger.info(f"✅ Successfully parsed patch JSON")
+
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Patch JSON parsing failed: {e}")
+                logger.error(f"📄 Full response that failed to parse:\n{patch_text}")
+                return {
+                    "error": f"JSON parsing failed: {str(e)}",
+                    "patch_json": {},
+                    "raw_response": patch_text,
+                    "annotations": {
+                        "heuristic_flags": ["json_parse_failure"],
+                        "sanity_flags": [],
+                        "requires_review": True
+                    }
+                }
+
+            # Apply heuristic filters
+            logger.info("🔍 Applying heuristic filters")
+            validation = HeuristicFilters.validate_patch(patch_json)
+
+            logger.info(f"📊 Validation result: passed={validation['passed']}, " +
+                       f"flags={len(validation['heuristic_flags'])}")
+
+            was_downscoped = False
+            if not validation['passed']:
+                logger.warning(f"⚠️ Patch failed validation: {validation['reasons']}")
+
+                # Try auto-downscope
+                logger.info("🔧 Attempting auto-downscope")
+                patch_json, was_downscoped = HeuristicFilters.downscope_patch_if_needed(
+                    patch_json, validation
+                )
+
+                if was_downscoped:
+                    logger.info("✅ Auto-downscope applied successfully")
+                    # Re-validate after downscope
+                    validation = HeuristicFilters.validate_patch(patch_json)
+                    logger.info(f"📊 Post-downscope validation: passed={validation['passed']}")
+
+            # Annotate patch with heuristic results
+            if 'annotations' not in patch_json:
+                patch_json['annotations'] = {}
+
+            patch_json['annotations']['heuristic_flags'] = validation['heuristic_flags']
+            patch_json['annotations']['auto_downscoped'] = was_downscoped
+            patch_json['annotations']['requires_hitl_review'] = not validation['passed']
+
+            # Apply sanity gate (LLM reflection)
+            logger.info("🛡️ Applying sanity gate (LLM reflection)")
+            patch_json = await SanityGate.apply_sanity_gate(self, patch_json)
+
+            sanity_flags_count = len(patch_json.get('annotations', {}).get('sanity_flags', []))
+            logger.info(f"✅ Sanity gate applied: {sanity_flags_count} flags")
+
+            # Log metrics
+            latency_ms = int((time.time() - start_time) * 1000)
+            LLMMetrics.log_patch_job(
+                job_id=job_id,
+                latency_ms=latency_ms,
+                temperature=TASK_TEMPERATURES['PATCH'],
+                heuristic_flags_count=len(validation.get('heuristic_flags', [])),
+                sanity_flags_count=sanity_flags_count,
+                passed_validation=validation['passed'],
+                auto_downscoped=was_downscoped
+            )
+
+            logger.info(f"✅ Strategy patch generated successfully " +
+                       f"(validation={'passed' if validation['passed'] else 'failed'}, " +
+                       f"downscoped={was_downscoped})")
+
+            return patch_json
+
+        except Exception as e:
+            logger.error(f"Patch generation failed: {e}")
+            return {
+                "error": str(e),
+                "patch_json": {},
+                "annotations": {
+                    "heuristic_flags": ["generation_failed"],
+                    "sanity_flags": [],
+                    "requires_review": True
+                }
             }
 
     async def apply_patch(self, project_id: str, patch: Dict[str, Any]) -> Dict[str, Any]:
@@ -621,70 +901,120 @@ class GeminiOrchestrator:
                 "patch": {"emergency_optimization": "required"}
             }
 
-    async def edit_patch_with_llm(self, patch_id: str, edit_request: str) -> Dict[str, Any]:
-        """Edit strategy patch based on user feedback"""
+    async def edit_patch_with_llm(self, patch_id: str, edit_request: str, original_patch: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Edit strategy patch based on user feedback with minimal delta and validation"""
         try:
-            logger.info(f"Editing patch {patch_id} with request: {edit_request}")
+            from .heuristic_filters import HeuristicFilters
+            from .sanity_gate import SanityGate
+            from .logging_metrics import LLMMetrics
+
+            start_time = time.time()
+            job_id = str(uuid.uuid4())
+
+            logger.info(f"[JOB {job_id[:8]}] Editing patch {patch_id} with request: {edit_request}")
+
+            # Include original patch context if provided
+            original_patch_context = ""
+            if original_patch:
+                original_patch_context = f"\nOriginal Patch:\n{json.dumps(original_patch, indent=2)}\n"
 
             prompt = f"""
-            As a Marketing Strategy Patch Editor, modify the existing strategy based on this user feedback:
+As a Marketing Strategy Patch Editor, modify the existing strategy based on this user feedback.
+{original_patch_context}
+Edit Request: {edit_request}
 
-            Edit Request: {edit_request}
+CRITICAL RULES:
+1. Create a MINIMAL delta patch that changes ONLY what the user requested
+2. DO NOT change unrelated fields or strategy elements
+3. Maintain all existing structure and fields that aren't being edited
+4. Keep budget shifts ≤25% from baseline
+5. Limit to ≤3 key themes per audience segment
 
-            Create an updated strategy patch that incorporates the user's feedback while maintaining strategic coherence.
+Return a JSON object with:
+{{
+  "updated_patch": {{
+    "audience_targeting": {{...only if changed...}},
+    "messaging_strategy": {{...only if changed...}},
+    "channel_strategy": {{...only if changed...}},
+    "budget_allocation": {{...only if changed...}}
+  }},
+  "changes_made": ["specific change 1", "specific change 2"],
+  "rationale": "why these specific changes address the user's request",
+  "impact_assessment": "expected impact of these changes"
+}}
 
-            Return a JSON object with:
-            - updated_patch: object with modified strategy elements
-            - changes_made: array describing what was changed
-            - rationale: string explaining why changes were made
-            - impact_assessment: string describing expected impact
-            """
+Return ONLY the JSON, no additional commentary.
+"""
 
-            logger.info(f"🤖 Sending patch edit request to configured LLM for patch {patch_id}")
-            logger.info(f"📝 Request Details:")
-            logger.info(f"   - Edit request: '{edit_request}'")
-            logger.info(f"   - Prompt length: {len(prompt)} characters")
+            logger.info(f"📝 Edit prompt length: {len(prompt)} characters")
             logger.debug(f"📨 Full edit prompt:\n{prompt}")
 
+            # Call LLM @ temp=0.2 (deterministic, minimal changes)
             edited_text = await self._call_llm('EDIT', prompt)
 
-            logger.info(f"✅ LLM edit response received")
-            logger.info(f"📤 Response length: {len(edited_text)} characters")
-            logger.debug(f"📋 Full edit response:\n{edited_text}")
-            logger.info(f"🔍 Edit preview: {edited_text[:200]}...")
+            logger.info(f"✅ LLM edit response received ({len(edited_text)} chars)")
+            logger.debug(f"📋 Full response:\n{edited_text}")
 
-            # Try to parse JSON response
+            # Parse JSON response
             try:
-                # Extract JSON from response (handling markdown code blocks)
                 clean_json = self._extract_json_from_response(edited_text)
                 if not clean_json:
                     raise json.JSONDecodeError("No JSON content found", edited_text, 0)
 
                 edited_patch = json.loads(clean_json)
-                logger.info("✅ Successfully parsed edited patch JSON response")
-                logger.info(f"🔧 Edited patch structure:")
-                for key, value in edited_patch.items():
-                    if isinstance(value, (dict, list)):
-                        logger.info(f"   - {key}: {type(value).__name__} with {len(value)} items")
-                    else:
-                        logger.info(f"   - {key}: {type(value).__name__}")
-                logger.debug(f"📊 Full parsed edited patch:\n{json.dumps(edited_patch, indent=2)}")
+                logger.info("✅ Successfully parsed edited patch JSON")
+
             except json.JSONDecodeError as e:
                 logger.error(f"❌ Edited patch JSON parsing failed: {e}")
-                logger.error(f"📄 Full edit response that failed to parse:\n{edited_text}")
+                logger.error(f"📄 Full response that failed to parse:\n{edited_text}")
                 edited_patch = {
                     "updated_patch": {"status": "Edit in progress"},
                     "changes_made": ["Processing user feedback"],
                     "rationale": "Analyzing requested modifications",
                     "impact_assessment": "Impact analysis pending",
+                    "error": f"JSON parsing failed: {str(e)}",
                     "raw_edit": edited_text
                 }
 
+            # Extract the updated_patch for validation
+            final_patch = edited_patch.get('updated_patch', {})
+
+            # Calculate delta size (number of changed fields)
+            delta_size = len(edited_patch.get('changes_made', []))
+            logger.info(f"📊 Delta size: {delta_size} changes")
+
+            # Apply heuristic filters to final merged patch
+            logger.info("🔍 Applying heuristic filters to edited patch")
+            validation = HeuristicFilters.validate_patch(final_patch)
+
+            passed_filters = validation['passed']
+            logger.info(f"📊 Validation result: passed={passed_filters}, " +
+                       f"flags={len(validation['heuristic_flags'])}")
+
+            # Apply sanity gate
+            logger.info("🛡️ Applying sanity gate to edited patch")
+            final_patch = await SanityGate.apply_sanity_gate(self, final_patch)
+
+            # Update the edited_patch with validated final_patch
+            edited_patch['updated_patch'] = final_patch
+
+            # Add metadata
             edited_patch["patch_id"] = str(uuid.uuid4())
             edited_patch["original_patch_id"] = patch_id
             edited_patch["edited_at"] = datetime.utcnow().isoformat()
 
-            logger.info("Patch edited successfully")
+            # Log metrics
+            latency_ms = int((time.time() - start_time) * 1000)
+            LLMMetrics.log_edit_job(
+                job_id=job_id,
+                latency_ms=latency_ms,
+                temperature=TASK_TEMPERATURES['EDIT'],
+                delta_size=delta_size,
+                passed_filters=passed_filters,
+                original_patch_id=patch_id
+            )
+
+            logger.info(f"✅ Patch edited successfully (delta={delta_size}, valid={passed_filters})")
             return edited_patch
 
         except Exception as e:

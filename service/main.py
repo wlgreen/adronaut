@@ -605,52 +605,105 @@ async def run_autogen_workflow(project_id: str, run_id: str):
         await db.log_step_event(actual_project_id, run_id, "FEATURES", "completed")
         logger.info(f"📸 [RUN {run_id[:8]}] Snapshot stored: {snapshot_id}")
 
-        # Step 4: INSIGHTS - Generate insights
+        # Step 4: INSIGHTS - Generate insight candidates and select top 3 (NO patch yet)
         logger.info(f"💡 [RUN {run_id[:8]}] STEP 4: INSIGHTS - Generating strategic insights...")
         active_runs[run_id]["current_step"] = "INSIGHTS"
-        active_runs[run_id]["status_message"] = "Insights building..."
+        active_runs[run_id]["status_message"] = "Generating insight candidates..."
         await asyncio.sleep(0.3)  # Give SSE time to capture this status
         await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "started")
 
-        logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Strategic insights generation")
+        logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Strategic insights generation (k=5 candidates)")
         logger.info(f"📊 [RUN {run_id[:8]}] Input: features from previous step")
         if isinstance(features, dict):
             logger.info(f"   📋 Features keys: {list(features.keys())}")
 
-        insights = await orchestrator.generate_insights(features)
+        insights_result = await orchestrator.generate_insights(features)
 
         logger.info(f"✅ [RUN {run_id[:8]}] LLM RESPONSE: Strategic insights completed")
-        logger.info(f"🧠 [RUN {run_id[:8]}] Generated insights summary:")
-        if isinstance(insights, dict):
-            for key, value in insights.items():
-                if key == "error":
-                    logger.error(f"   ❌ {key}: {value}")
-                elif key == "patch":
-                    logger.info(f"   🔧 {key}: Strategy patch generated")
-                elif isinstance(value, (list, dict)):
-                    logger.info(f"   ✓ {key}: {type(value).__name__} with {len(value)} items")
-                else:
-                    logger.info(f"   ✓ {key}: {str(value)[:100]}...")
+        logger.info(f"🧠 [RUN {run_id[:8]}] Insights selection summary:")
+        if isinstance(insights_result, dict):
+            insights_list = insights_result.get('insights', [])
+            candidates_evaluated = insights_result.get('candidates_evaluated', 0)
+            selection_method = insights_result.get('selection_method', 'unknown')
 
-        await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "completed")
+            logger.info(f"   📊 Candidates evaluated: {candidates_evaluated}")
+            logger.info(f"   🎯 Selection method: {selection_method}")
+            logger.info(f"   ✅ Top insights selected: {len(insights_list)}")
+
+            for i, insight in enumerate(insights_list, 1):
+                logger.info(f"   {i}. [{insight.get('impact_score', 0)}/100] {insight.get('primary_lever', 'unknown')} - {insight.get('insight', 'No description')[:80]}...")
+                logger.info(f"      Data support: {insight.get('data_support', 'unknown')}, Confidence: {insight.get('confidence', 0):.2f}")
+
+        await db.log_step_event(actual_project_id, run_id, "INSIGHTS", "completed",
+                               metadata={'candidates_evaluated': insights_result.get('candidates_evaluated', 0)})
 
         # Update snapshot with insights
         logger.info(f"💾 [RUN {run_id[:8]}] Updating analysis snapshot with insights...")
-        combined_snapshot = {**features, **insights}
+        combined_snapshot = {**features, 'insights': insights_result}
         snapshot_id = await db.create_snapshot(actual_project_id, combined_snapshot)
         logger.info(f"📸 [RUN {run_id[:8]}] Snapshot updated with insights: {snapshot_id}")
 
-        # Step 5: PATCH_PROPOSED - Create strategy patch
-        logger.info(f"📝 [RUN {run_id[:8]}] STEP 5: PATCH_PROPOSED - Creating strategy patch...")
+        # Step 5: PATCH_GENERATION - Generate patch from insights with filters and validation
+        logger.info(f"🔧 [RUN {run_id[:8]}] STEP 5: PATCH_GENERATION - Generating strategy patch from insights...")
+        active_runs[run_id]["current_step"] = "PATCH_GENERATION"
+        active_runs[run_id]["status_message"] = "Generating strategy patch with validation..."
+        await asyncio.sleep(0.3)  # Give SSE time to capture this status
+        await db.log_step_event(actual_project_id, run_id, "PATCH_GENERATION", "started")
+
+        logger.info(f"🤖 [RUN {run_id[:8]}] LLM REQUEST: Patch generation with heuristic filters and sanity gate")
+        patch_with_annotations = await orchestrator.generate_patch(insights_result)
+
+        # Extract components
+        annotations = patch_with_annotations.get('annotations', {})
+        sanity_review = patch_with_annotations.get('sanity_review', 'safe')
+        heuristic_flags = annotations.get('heuristic_flags', [])
+        sanity_flags = annotations.get('sanity_flags', [])
+        requires_hitl_review = annotations.get('requires_hitl_review', False)
+        auto_downscoped = annotations.get('auto_downscoped', False)
+
+        logger.info(f"✅ [RUN {run_id[:8]}] Patch generation completed")
+        logger.info(f"📋 [RUN {run_id[:8]}] Validation results:")
+        logger.info(f"   🔍 Heuristic flags: {len(heuristic_flags)}")
+        if heuristic_flags:
+            for flag in heuristic_flags:
+                logger.info(f"      ⚠️ {flag}")
+        logger.info(f"   🛡️ Sanity flags: {len(sanity_flags)}")
+        if sanity_flags:
+            for flag in sanity_flags:
+                logger.info(f"      ⚠️ [{flag.get('risk', 'unknown')}] {flag.get('reason', 'No reason')}")
+        logger.info(f"   📊 Sanity review: {sanity_review}")
+        logger.info(f"   🔧 Auto-downscoped: {auto_downscoped}")
+        logger.info(f"   👤 Requires HITL review: {requires_hitl_review}")
+
+        await db.log_step_event(actual_project_id, run_id, "PATCH_GENERATION", "completed",
+                               metadata={
+                                   'heuristic_flags_count': len(heuristic_flags),
+                                   'sanity_flags_count': len(sanity_flags),
+                                   'sanity_review': sanity_review,
+                                   'auto_downscoped': auto_downscoped,
+                                   'requires_hitl_review': requires_hitl_review
+                               })
+
+        # Step 6: PATCH_PROPOSED - Store strategy patch with annotations
+        logger.info(f"📝 [RUN {run_id[:8]}] STEP 6: PATCH_PROPOSED - Storing strategy patch...")
         active_runs[run_id]["current_step"] = "PATCH_PROPOSED"
-        active_runs[run_id]["status_message"] = "Strategy building..."
+        active_runs[run_id]["status_message"] = "Storing strategy patch..."
         await asyncio.sleep(0.3)  # Give SSE time to capture this status
 
-        # Log patch details before storing
-        patch_data = insights.get("patch", {})
-        justification = insights.get("justification", "No justification provided")
+        # Remove annotations from patch_json (they go in separate field)
+        patch_data = {k: v for k, v in patch_with_annotations.items()
+                     if k not in ['annotations', 'sanity_review', 'insufficient_evidence']}
+
+        # Create justification from insights
+        justification_obj = {
+            'insights': insights_result.get('insights', []),
+            'candidates_evaluated': insights_result.get('candidates_evaluated', 0),
+            'selection_method': insights_result.get('selection_method', 'unknown')
+        }
+        justification = json.dumps(justification_obj, indent=2)
+
         logger.info(f"🔧 [RUN {run_id[:8]}] Patch details:")
-        logger.info(f"   📄 Justification: {justification[:200]}...")
+        logger.info(f"   📊 Based on {len(insights_result.get('insights', []))} top insights")
         if isinstance(patch_data, dict):
             logger.info(f"   🛠️ Patch keys: {list(patch_data.keys())}")
             for key, value in patch_data.items():
@@ -663,7 +716,8 @@ async def run_autogen_workflow(project_id: str, run_id: str):
             project_id=actual_project_id,
             source="insights",
             patch_json=patch_data,
-            justification=justification
+            justification=justification,
+            annotations=annotations  # Store heuristic/sanity flags
         )
         logger.info(f"📋 [RUN {run_id[:8]}] Strategy patch created and stored in database: {patch_id}")
 

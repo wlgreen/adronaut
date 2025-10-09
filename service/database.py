@@ -354,9 +354,10 @@ class Database:
         source: str,
         patch_json: Dict[str, Any],
         justification: str,
-        strategy_id: Optional[str] = None
+        strategy_id: Optional[str] = None,
+        annotations: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Create a new strategy patch"""
+        """Create a new strategy patch with optional annotations"""
         if not self.client:
             return str(uuid.uuid4())
 
@@ -376,6 +377,10 @@ class Database:
                 "justification": justification,
                 "status": "proposed"
             }
+
+            # Add annotations if provided (heuristic flags, sanity flags, etc.)
+            if annotations:
+                patch_data["annotations"] = self._serialize_json_data(annotations)
 
             result = self.client.table("strategy_patches").insert(patch_data).execute()
             return result.data[0]["patch_id"]
