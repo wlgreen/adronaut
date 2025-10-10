@@ -965,23 +965,27 @@ Return ONLY the StrategyPatch JSON, no additional commentary.
             logger.info(f"Applying strategy patch for project {project_id}")
 
             # Create a comprehensive strategy based on the patch
+            # Use top-level fields matching patch structure (frontend expects these at top level)
             strategy = {
                 "project_id": project_id,
                 "strategy_id": str(uuid.uuid4()),
                 "created_at": datetime.utcnow().isoformat(),
                 "version": "1.0",
                 "patch_applied": patch,
-                "strategy": {
-                    "targeting": patch.get("targeting_strategy", {}),
-                    "channels": patch.get("channel_strategy", {}),
-                    "messaging": patch.get("messaging_strategy", {}),
-                    "budget": patch.get("budget_strategy", {}),
-                    "performance": patch.get("performance_strategy", {})
-                },
+                # Top-level fields matching patch output from generate_patch()
+                "audience_targeting": patch.get("audience_targeting", {}),
+                "messaging_strategy": patch.get("messaging_strategy", {}),
+                "channel_strategy": patch.get("channel_strategy", {}),
+                "budget_allocation": patch.get("budget_allocation", {}),
+                "success_metrics": patch.get("success_metrics", {}),
                 "status": "active"
             }
 
             logger.info("Strategy patch applied successfully")
+            logger.info(f"📊 Strategy structure: audience_targeting={bool(strategy['audience_targeting'])}, " +
+                       f"messaging_strategy={bool(strategy['messaging_strategy'])}, " +
+                       f"channel_strategy={bool(strategy['channel_strategy'])}, " +
+                       f"budget_allocation={bool(strategy['budget_allocation'])}")
             return strategy
 
         except Exception as e:

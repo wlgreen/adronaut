@@ -133,6 +133,12 @@ class WorkflowEngine:
             # Update snapshot with insights
             if save_to_db and self.db and project_id:
                 combined_snapshot = {**features, 'insights': insights_result}
+                log(f"📊 Combined snapshot structure:", 'info')
+                log(f"   - Total keys: {len(combined_snapshot)}", 'info')
+                log(f"   - Has 'insights' key: {('insights' in combined_snapshot)}", 'info')
+                if 'insights' in combined_snapshot:
+                    log(f"   - insights.insights array length: {len(combined_snapshot['insights'].get('insights', []))}", 'info')
+                    log(f"   - insights.candidates_evaluated: {combined_snapshot['insights'].get('candidates_evaluated', 'N/A')}", 'info')
                 snapshot_id = await self.db.create_snapshot(project_id, combined_snapshot)
                 log(f"💾 Snapshot updated with insights: {snapshot_id}", 'info')
 
