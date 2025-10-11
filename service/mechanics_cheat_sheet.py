@@ -3,6 +3,85 @@ Performance Mechanics Cheat Sheet
 Maps metrics to primary/secondary levers for causal reasoning in ad optimization
 """
 
+# Universal patterns (platform-agnostic) - exported separately for use in prompts
+UNIVERSAL_MECHANICS = """
+## Universal Performance Patterns (Platform-Agnostic)
+
+**Pattern 1: Efficiency Outliers**
+Identify dimension values (segments) with significantly better efficiency metrics (2x+ vs average).
+- Lever: budget (reallocate to winners)
+- Example: "Segment X achieves 2.5x ROAS vs portfolio average → shift budget from underperformers"
+- Detection: Sort by efficiency metric, find top 10-20%, check if >2x better than median
+
+**Pattern 2: Waste Elimination**
+Find segments with poor efficiency + high cost (bottom performers consuming significant budget).
+- Lever: budget/audience (pause or reduce spend)
+- Example: "15 keywords drove 0 orders with $78 wasted spend → pause immediately"
+- Detection: Filter segments with efficiency <50% of average AND cost >10% of total
+
+**Pattern 3: Comparative Gap Closure**
+If current_metric < benchmark/suggested_metric → missed opportunity.
+If current_metric > benchmark → potential waste/risk.
+- Lever: bidding (if bid-related) or budget (if spend-related)
+- Example: "Current bids 42% below suggested median across all keywords → missing volume opportunity"
+- Detection: Calculate (current - suggested) / suggested for all segments, identify systematic gaps
+
+**Pattern 4: Volume + Efficiency Matrix**
+Classify segments by efficiency (high/low) × volume (high/low):
+- High efficiency + Low volume = **Scale opportunity** (increase budget/bids)
+- High efficiency + High volume = **Proven winner** (protect/maintain)
+- Low efficiency + High volume = **Major waste** (reduce/pause urgently)
+- Low efficiency + Low volume = **Test or kill** (experiment with small budget or pause)
+
+**Pattern 5: Segment Concentration (Pareto Analysis)**
+Calculate what % of segments drive 80% of performance.
+- If >60% performance concentrated in <20% segments → reallocation opportunity
+- Lever: budget
+- Example: "Top 3 keywords (12% of total) drive 63% of orders → reallocate from long tail"
+- Detection: Sort segments by target metric (orders, revenue, etc), calculate cumulative %
+
+**Pattern 6: Metric Correlation Analysis**
+Check relationship between metrics:
+- Negative correlation (cost ↑ efficiency ↓) = Normal, expected
+- Positive correlation = Anomaly worth investigating
+- Use for contrastive reasoning ("Why X performs despite high cost")
+
+**Pattern 7: Low-Data Segments**
+Segments with <10 data points → insufficient for confident decisions.
+- Lever: any (but action = experiment/test)
+- Example: "Campaign Z has only 3 days of scattered data → run 14-day structured test with $500 budget cap"
+- Detection: Count data points per segment, flag if <10
+
+---
+
+## Lever Selection for Universal Patterns
+
+**Budget lever** when:
+- Reallocating between proven segments (Pattern 1, 5)
+- Volume opportunity exists with good efficiency (Pattern 4)
+- Pausing wasteful spend (Pattern 2)
+
+**Bidding lever** when:
+- Comparative gap in bid/price metrics (Pattern 3)
+- Cost inefficiency with auction dynamics
+- Competition-related opportunities
+
+**Audience lever** when:
+- Targeting precision issue (broad match, geo spread)
+- Quality mismatch (wrong segment targeting)
+- Overlapping/redundant segments
+
+**Creative lever** when:
+- Message mismatch evident in engagement data
+- A/B test results show creative impact
+- High impressions but low click-through
+
+**Funnel lever** when:
+- High click but low conversion pattern
+- Checkout/landing page issues indicated
+- Post-click journey problems
+"""
+
 MECHANICS_CHEAT_SHEET = """
 ## Performance Mechanics Guide
 
@@ -45,6 +124,55 @@ MECHANICS_CHEAT_SHEET = """
 - Primary levers: creative (messaging, brand storytelling), audience (reach + frequency balance)
 - Secondary: budget (sufficient exposure for recall), funnel (consistent brand experience)
 - Typical actions: Test brand messaging variants, optimize reach/frequency, ensure cross-channel consistency
+
+---
+
+## Universal Performance Patterns (Platform-Agnostic)
+
+**Pattern 1: Efficiency Outliers**
+Identify dimension values (segments) with significantly better efficiency metrics (2x+ vs average).
+- Lever: budget (reallocate to winners)
+- Example: "Segment X achieves 2.5x ROAS vs portfolio average → shift budget from underperformers"
+- Detection: Sort by efficiency metric, find top 10-20%, check if >2x better than median
+
+**Pattern 2: Waste Elimination**
+Find segments with poor efficiency + high cost (bottom performers consuming significant budget).
+- Lever: budget/audience (pause or reduce spend)
+- Example: "15 keywords drove 0 orders with $78 wasted spend → pause immediately"
+- Detection: Filter segments with efficiency <50% of average AND cost >10% of total
+
+**Pattern 3: Comparative Gap Closure**
+If current_metric < benchmark/suggested_metric → missed opportunity.
+If current_metric > benchmark → potential waste/risk.
+- Lever: bidding (if bid-related) or budget (if spend-related)
+- Example: "Current bids 42% below suggested median across all keywords → missing volume opportunity"
+- Detection: Calculate (current - suggested) / suggested for all segments, identify systematic gaps
+
+**Pattern 4: Volume + Efficiency Matrix**
+Classify segments by efficiency (high/low) × volume (high/low):
+- High efficiency + Low volume = **Scale opportunity** (increase budget/bids)
+- High efficiency + High volume = **Proven winner** (protect/maintain)
+- Low efficiency + High volume = **Major waste** (reduce/pause urgently)
+- Low efficiency + Low volume = **Test or kill** (experiment with small budget or pause)
+
+**Pattern 5: Segment Concentration (Pareto Analysis)**
+Calculate what % of segments drive 80% of performance.
+- If >60% performance concentrated in <20% segments → reallocation opportunity
+- Lever: budget
+- Example: "Top 3 keywords (12% of total) drive 63% of orders → reallocate from long tail"
+- Detection: Sort segments by target metric (orders, revenue, etc), calculate cumulative %
+
+**Pattern 6: Metric Correlation Analysis**
+Check relationship between metrics:
+- Negative correlation (cost ↑ efficiency ↓) = Normal, expected
+- Positive correlation = Anomaly worth investigating
+- Use for contrastive reasoning ("Why X performs despite high cost")
+
+**Pattern 7: Low-Data Segments**
+Segments with <10 data points → insufficient for confident decisions.
+- Lever: any (but action = experiment/test)
+- Example: "Campaign Z has only 3 days of scattered data → run 14-day structured test with $500 budget cap"
+- Detection: Count data points per segment, flag if <10
 
 ---
 

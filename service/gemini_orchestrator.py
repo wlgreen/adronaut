@@ -196,9 +196,11 @@ class GeminiOrchestrator:
             raise
 
     async def extract_features(self, artifacts: List[Dict]) -> Dict[str, Any]:
-        """Extract marketing features from uploaded artifacts"""
+        """Extract marketing features from uploaded artifacts with schema detection"""
         try:
-            logger.info("Starting feature extraction")
+            from schema_detector import SchemaDetector
+
+            logger.info("Starting feature extraction with schema detection")
             logger.info(f"📊 Received {len(artifacts)} artifacts for analysis")
 
             # Prepare artifact summaries for analysis
@@ -235,18 +237,60 @@ class GeminiOrchestrator:
                     ]
                 }
 
+            # Auto-detect schema from artifacts
+            detector = SchemaDetector()
+
+            # Extract tabular data from summaries (if present)
+            data_rows = []
+            for artifact in artifacts:
+                summary = artifact.get("summary_json", {})
+                # Check if summary contains tabular data (list of dicts)
+                if isinstance(summary, list):
+                    data_rows.extend(summary)
+                elif isinstance(summary, dict):
+                    # Check for common data container keys
+                    for key in ['data', 'rows', 'records', 'items', 'results']:
+                        if key in summary and isinstance(summary[key], list):
+                            data_rows.extend(summary[key])
+                            break
+
+            # Run schema detection
+            schema = detector.detect_schema(data_rows) if data_rows else detector._empty_schema()
+            data_dictionary = detector.build_data_dictionary(schema, data_rows) if data_rows else ""
+
+            logger.info(f"📊 Schema detected: {schema['primary_dimension']} " +
+                       f"({schema['row_count']} rows, " +
+                       f"{len(schema['metrics']['efficiency_metrics'])} efficiency metrics, " +
+                       f"{len(schema['metrics']['cost_metrics'])} cost metrics)")
+
+            # Include schema in artifact summaries for prompt
+            artifact_context = {
+                "detected_schema": schema,
+                "data_dictionary": data_dictionary,
+                "artifacts": artifact_summaries
+            }
+
             prompt = f"""
-            As a Marketing Data Feature Extractor, analyze the following marketing artifacts and extract ONLY information that is explicitly present.
+            As a Marketing Data Feature Extractor, analyze marketing artifacts and extract ONLY explicitly present information.
 
-            Number of artifacts: {len(artifact_summaries)}
+            {data_dictionary if data_dictionary else "No structured data dictionary available - working with raw artifacts."}
 
-            Artifacts Data: {json.dumps(artifact_summaries, indent=2)}
+            Detected Schema:
+            - Primary dimension: {schema['primary_dimension']}
+            - Row count: {schema['row_count']}
+            - Available metrics:
+              * Efficiency: {', '.join(schema['metrics']['efficiency_metrics']) if schema['metrics']['efficiency_metrics'] else 'none'}
+              * Cost: {', '.join(schema['metrics']['cost_metrics']) if schema['metrics']['cost_metrics'] else 'none'}
+              * Volume: {', '.join(schema['metrics']['volume_metrics']) if schema['metrics']['volume_metrics'] else 'none'}
+              * Comparative: {', '.join(schema['metrics']['comparative_metrics']) if schema['metrics']['comparative_metrics'] else 'none'}
+
+            Artifact Context: {json.dumps(artifact_context, indent=2)}
 
             **CRITICAL RULES:**
-            1. Extract ONLY data explicitly present in artifacts
-            2. Use "insufficient_evidence" for any missing information - DO NOT infer, suggest, or assume
-            3. Include specific references to where you found each piece of data
-            4. Separate facts from any insights drawn from those facts
+            1. Extract ONLY data explicitly present - NO platform assumptions
+            2. Use actual column names from detected schema
+            3. Use "insufficient_evidence" for missing information
+            4. Work with detected {schema['primary_dimension']} as primary grouping variable
 
             **GOOD Example (data present):**
             {{
@@ -276,56 +320,51 @@ class GeminiOrchestrator:
               }}
             }}
 
-            Return a JSON object with these keys (use "insufficient_evidence" if data not present):
+            Return a JSON object with schema-adaptive structure:
 
             {{
-              "target_audience": {{
-                "segments": [array of audience segments found] or "insufficient_evidence",
-                "data_source": "where this data came from"
+              "data_schema": {{
+                "primary_dimension": "{schema['primary_dimension']}",
+                "row_count": {schema['row_count']},
+                "available_metrics": {{
+                  "efficiency": {schema['metrics']['efficiency_metrics']},
+                  "cost": {schema['metrics']['cost_metrics']},
+                  "volume": {schema['metrics']['volume_metrics']},
+                  "comparative": {schema['metrics']['comparative_metrics']}
+                }}
               }},
-              "metrics": {{
-                "campaigns": {{
-                  "campaign_id": {{
-                    "impressions": number or "insufficient_evidence",
-                    "clicks": number or "insufficient_evidence",
-                    "conversions": number or "insufficient_evidence",
-                    "spend": number or "insufficient_evidence",
-                    "revenue": number or "insufficient_evidence",
-                    "ctr": "percentage" or "insufficient_evidence",
-                    "cpa": number or "insufficient_evidence",
-                    "roas": number or "insufficient_evidence",
-                    "date_range": "YYYY-MM-DD to YYYY-MM-DD"
+
+              "metrics_summary": {{
+                "by_metric": {{
+                  "metric_name": {{
+                    "avg": number,
+                    "range": [min, max],
+                    "top_3_performers": [{{"dimension_value": "X", "value": Y}}],
+                    "bottom_3_performers": [{{"dimension_value": "X", "value": Y}}]
                   }}
-                }},
-                "data_completeness": "complete" | "partial" | "minimal"
+                }}
               }},
-              "channels": [array of channels explicitly mentioned] or "insufficient_evidence",
-              "messaging": [array of themes/messages explicitly stated] or "insufficient_evidence",
-              "creative_performance": {{
-                "by_campaign": {{
-                  "campaign_id": {{
-                    "creative_type": "description from data",
-                    "performance_notes": "explicit notes from data"
+
+              "segment_performance": {{
+                "by_{schema['primary_dimension']}": [
+                  {{
+                    "id": "actual_value_from_data",
+                    "metrics": {{"metric1": value1, "metric2": value2}},
+                    "rank": 1
                   }}
-                }} or "insufficient_evidence"
+                ]
               }},
-              "geographic_insights": {{
-                "by_campaign": {{
-                  "campaign_id": {{
-                    "top_geos": [list from data],
-                    "performance_notes": "explicit notes"
-                  }}
-                }} or "insufficient_evidence"
-              }},
-              "budget_data": {{
-                "total_budget": number or "insufficient_evidence",
-                "by_campaign": {{}} or "insufficient_evidence"
-              }},
-              "objectives": [array of explicit goals stated] or "insufficient_evidence",
-              "recommendations_from_data": [array of recommendations explicitly provided in artifacts] or "insufficient_evidence"
+
+              "opportunities_detected": [
+                {{"type": "gap/concentration/outlier/waste", "description": "specific finding with numbers", "magnitude": number}}
+              ],
+
+              "target_audience": {{"description": "if explicitly mentioned"}} or "insufficient_evidence",
+              "channels": [array of channels mentioned] or "insufficient_evidence",
+              "objectives": [array of explicit goals] or "insufficient_evidence"
             }}
 
-            MUST return valid JSON. Mark missing data as "insufficient_evidence", never infer or suggest.
+            MUST return valid JSON. Use actual metric names. NO platform assumptions.
             """
 
             logger.info("🤖 Sending feature extraction request to configured LLM")
@@ -366,8 +405,9 @@ class GeminiOrchestrator:
                 logger.error(f"   - Starts with: '{features_text[:50]}'")
                 logger.error(f"   - Ends with: '{features_text[-50:]}'")
                 logger.error(f"   - Contains JSON markers: {'{' in features_text and '}' in features_text}")
-                # If JSON parsing fails, create a structured response
+                # If JSON parsing fails, create a structured response with schema
                 features = {
+                    "data_schema": schema,
                     "target_audience": {"description": "Analysis pending"},
                     "brand_positioning": "Analysis pending",
                     "channels": [],
@@ -375,11 +415,14 @@ class GeminiOrchestrator:
                     "objectives": [],
                     "budget_insights": {},
                     "metrics": {},
+                    "metrics_summary": {},
+                    "segment_performance": {},
+                    "opportunities_detected": [],
                     "competitive_insights": [],
                     "recommendations": [],
                     "raw_analysis": features_text
                 }
-                logger.info("🔧 Created fallback structured response")
+                logger.info("🔧 Created fallback structured response with schema")
 
             logger.info("Feature extraction completed successfully")
             return features
@@ -437,9 +480,9 @@ class GeminiOrchestrator:
             }
 
     async def generate_insights(self, features: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate k=5 insight candidates, score, and select top 3 (NO patch)"""
+        """Generate k=5 insight candidates, score, and select top 3 (NO patch) with universal patterns"""
         try:
-            from mechanics_cheat_sheet import MECHANICS_CHEAT_SHEET
+            from mechanics_cheat_sheet import UNIVERSAL_MECHANICS
             from insights_selector import (
                 select_top_insights,
                 validate_insight_structure,
@@ -452,14 +495,34 @@ class GeminiOrchestrator:
             start_time = time.time()
             job_id = str(uuid.uuid4())
 
-            logger.info(f"[JOB {job_id[:8]}] Generating insight candidates with mechanics-guided prompting")
+            # Extract schema from features
+            schema = features.get('data_schema', {})
+            primary_dim = schema.get('primary_dimension', 'segment')
+            available_metrics = schema.get('available_metrics', {})
+
+            efficiency_metrics = ', '.join(available_metrics.get('efficiency', [])) if available_metrics.get('efficiency') else 'none detected'
+            cost_metrics = ', '.join(available_metrics.get('cost', [])) if available_metrics.get('cost') else 'none detected'
+            volume_metrics = ', '.join(available_metrics.get('volume', [])) if available_metrics.get('volume') else 'none detected'
+
+            logger.info(f"[JOB {job_id[:8]}] Generating insights using universal patterns")
+            logger.info(f"   Primary dimension: {primary_dim}")
+            logger.info(f"   Efficiency metrics: {efficiency_metrics}")
 
             prompt = f"""
-{MECHANICS_CHEAT_SHEET}
+{UNIVERSAL_MECHANICS}
 
-As a Marketing Strategy Insights Expert, analyze these extracted features and generate strategic insights:
+As a Marketing Strategy Insights Expert, analyze features using UNIVERSAL patterns (platform-agnostic):
+
+Data Schema Detected:
+- Primary dimension: {primary_dim}
+- Row count: {schema.get('row_count', 'unknown')}
+- Efficiency metrics: {efficiency_metrics}
+- Cost metrics: {cost_metrics}
+- Volume metrics: {volume_metrics}
 
 Features: {json.dumps(features, indent=2)}
+
+**CRITICAL: Use ACTUAL metric and dimension names from data above**
 
 **SPARSE DATA = LEARNING OPPORTUNITY (CRITICAL FOR SCORING)**
 
@@ -474,15 +537,44 @@ MANDATORY for weak insights:
 
 If you forget these, you will lose 2 points (penalty).
 
-**CRITICAL RULES:**
-1. Base all claims on evidence present in features. If insufficient data, set data_support="weak"
-2. Each insight must target exactly ONE primary lever from: audience, creative, budget, bidding, funnel
-3. Include expected_effect with direction (increase/decrease) + magnitude (small/medium/large) + concrete range
-4. Add evidence_refs with SPECIFIC paths: "features.metrics.campaigns.camp_002.roas" (not generic)
-5. If data_support="weak", propose learn/test action (pilot, A/B test, limited budget experiment)
-6. Provide contrastive reasoning: explain why you recommend X instead of alternative Y with specific tradeoffs
+**Apply Universal Patterns:**
 
-**EXAMPLE - Strong Insight (data_support="strong"):**
+1. **Outlier Pattern**: Find {primary_dim} with 2x+ better efficiency → scale budget
+2. **Waste Pattern**: Find {primary_dim} with poor efficiency + high cost → pause/reduce
+3. **Gap Pattern**: If comparative metrics exist → close gap (if opportunity)
+4. **Concentration Pattern**: If top 20% drive >60% results → reallocate budget
+5. **Low-Data Pattern**: <10 data points → structured experiment
+
+**CRITICAL RULES:**
+1. Use ACTUAL metric names from schema (not generic placeholders like "ROAS" unless it's in efficiency_metrics)
+2. Use ACTUAL {primary_dim} values from data (specific IDs/names, not "Segment X")
+3. Each insight targets ONE lever: audience, creative, budget, bidding, funnel
+4. Include expected_effect with ACTUAL metric name + concrete range
+5. Build evidence_refs with actual paths: "features.segment_performance.by_{primary_dim}.ACTUAL_ID.metrics.ACTUAL_METRIC"
+6. Contrastive reasoning: why THIS action vs alternatives
+
+**EXAMPLE - Universal Outlier Pattern (adapts to ANY dimension + metric):**
+{{
+  "insight": "{primary_dim} 'ACTUAL_VALUE_FROM_DATA' achieves ACTUAL_NUMBER on ACTUAL_METRIC_NAME (2.3x higher than avg of ACTUAL_AVG), representing 15% of spend",
+  "hypothesis": "Superior performance driven by [infer from data patterns - could be targeting quality, message fit, timing, etc.]",
+  "proposed_action": "Reallocate $SPECIFIC_AMOUNT (PERCENT% of total) from bottom performers [LIST_ACTUAL_IDS] to this {primary_dim} over TIMEFRAME. Monitor ACTUAL_METRIC daily.",
+  "primary_lever": "budget",
+  "expected_effect": {{
+    "direction": "increase",
+    "metric": "ACTUAL_METRIC_NAME",
+    "magnitude": "medium",
+    "range": "CONCRETE_RANGE based on current ACTUAL_METRIC baseline and reallocation math"
+  }},
+  "confidence": 0.78,
+  "data_support": "strong",
+  "evidence_refs": [
+    "features.segment_performance.by_{primary_dim}.ACTUAL_ID.metrics.ACTUAL_METRIC",
+    "features.metrics_summary.by_metric.ACTUAL_METRIC.avg"
+  ],
+  "contrastive_reason": "Reallocating to proven {primary_dim} (N data points, consistent ACTUAL_METRIC) lower risk than testing new segments or creative changes (longer timeline)"
+}}
+
+**EXAMPLE - Strong Insight (platform-specific, for reference):**
 {{
   "insight": "Camp_002 achieves 6.99 average ROAS (2.0x higher than Camp_001's 3.54 ROAS) while targeting SMB decision makers age 35-50",
   "hypothesis": "Testimonial-based creative format resonates stronger with business purchase decision makers compared to product-focused imagery targeting younger professionals",
@@ -550,11 +642,13 @@ If you forget these, you will lose 2 points (penalty).
 
 NOTE: This example includes ALL 4 mandatory elements: "$500 budget cap" (budget), "14-day pilot" (timeline), "measure CTR and ROAS daily" (metrics), "pilot experiment" (learning keyword). This scores 77 points.
 
-Generate 5 insight candidates following these examples. Each MUST have:
-- Specific numbers from features (not "high ROAS" but "6.99 ROAS")
+Generate 5 insight candidates following universal patterns. Each MUST have:
+- ACTUAL {primary_dim} values from features (not "Segment X" but real IDs/names like "keyword: fanny pack men")
+- ACTUAL metric names from schema (use {efficiency_metrics}, {cost_metrics}, {volume_metrics})
+- Specific numbers from features (not "high efficiency" but "6.99 actual_metric")
 - Concrete action steps with timelines
-- Expected effect ranges (not just "medium" but "15-25%")
-- Specific evidence paths (not "features.metrics" but "features.metrics.campaigns.camp_002.roas")
+- Expected effect ranges with ACTUAL metric names (not just "medium" but "15-25% improvement in actual_metric_name")
+- Specific evidence paths using actual schema: "features.segment_performance.by_{primary_dim}.actual_id.metrics.actual_metric"
 - Tradeoff analysis in contrastive_reason
 
 **REMINDER FOR WEAK DATA INSIGHTS:**

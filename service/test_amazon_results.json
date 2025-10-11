@@ -1,0 +1,128 @@
+{
+  "schema": {
+    "primary_dimension": "Match type",
+    "row_count": 216,
+    "dimensions": [
+      "Match type",
+      "Status",
+      "Top-of-search IS",
+      "\ufeffState"
+    ],
+    "identifiers": [
+      "Keyword",
+      "Keyword bid(USD)"
+    ],
+    "metrics": {
+      "efficiency_metrics": [
+        "CTR",
+        "ROAS"
+      ],
+      "cost_metrics": [
+        "ACOS",
+        "CPC(USD)",
+        "Estimated Impressions (high) From Suggested Bid (median)",
+        "Estimated Impressions (low) From Suggested Bid (median)",
+        "Spend(USD)",
+        "Suggested bid (high)(USD)",
+        "Suggested bid (low)(USD)",
+        "Suggested bid (median)(USD)"
+      ],
+      "volume_metrics": [
+        "Clicks",
+        "Impressions",
+        "NTB sales(USD)",
+        "Orders",
+        "Sales(USD)"
+      ],
+      "comparative_metrics": []
+    },
+    "unclassified": [
+      "% of orders NTB",
+      "% of sales NTB",
+      "NTB orders"
+    ],
+    "opportunities": []
+  },
+  "validation_passed": false,
+  "sample_rows": [
+    {
+      "\ufeffState": "ENABLED",
+      "Keyword": "fanny pack men",
+      "Match type": "EXACT",
+      "Status": "TARGETING_CLAUSE_STATUS_LIVE",
+      "Suggested bid (low)(USD)": "0.59",
+      "Suggested bid (median)(USD)": "0.78",
+      "Suggested bid (high)(USD)": "0.98",
+      "Estimated Impressions (low) From Suggested Bid (median)": "64992",
+      "Estimated Impressions (high) From Suggested Bid (median)": "97487",
+      "Keyword bid(USD)": "0.46",
+      "Top-of-search IS": "<5%",
+      "Impressions": "107152",
+      "Clicks": "544",
+      "CTR": "0.0051",
+      "Spend(USD)": "247.27",
+      "CPC(USD)": "0.45",
+      "Orders": "26",
+      "Sales(USD)": "925.72",
+      "ACOS": "0.2671",
+      "ROAS": "3.7438",
+      "NTB orders": "",
+      "% of orders NTB": "",
+      "NTB sales(USD)": "0.00",
+      "% of sales NTB": ""
+    },
+    {
+      "\ufeffState": "ENABLED",
+      "Keyword": "sports fanny packs",
+      "Match type": "BROAD",
+      "Status": "TARGETING_CLAUSE_STATUS_LIVE",
+      "Suggested bid (low)(USD)": "0.61",
+      "Suggested bid (median)(USD)": "0.91",
+      "Suggested bid (high)(USD)": "1.03",
+      "Estimated Impressions (low) From Suggested Bid (median)": "149289",
+      "Estimated Impressions (high) From Suggested Bid (median)": "223932",
+      "Keyword bid(USD)": "0.41",
+      "Top-of-search IS": "<5%",
+      "Impressions": "114281",
+      "Clicks": "501",
+      "CTR": "0.0044",
+      "Spend(USD)": "193.76",
+      "CPC(USD)": "0.39",
+      "Orders": "20",
+      "Sales(USD)": "471.81",
+      "ACOS": "0.4107",
+      "ROAS": "2.435",
+      "NTB orders": "",
+      "% of orders NTB": "",
+      "NTB sales(USD)": "0.00",
+      "% of sales NTB": ""
+    },
+    {
+      "\ufeffState": "ENABLED",
+      "Keyword": "fanny pack for women",
+      "Match type": "EXACT",
+      "Status": "TARGETING_CLAUSE_STATUS_LIVE",
+      "Suggested bid (low)(USD)": "0.62",
+      "Suggested bid (median)(USD)": "0.83",
+      "Suggested bid (high)(USD)": "1.04",
+      "Estimated Impressions (low) From Suggested Bid (median)": "26698",
+      "Estimated Impressions (high) From Suggested Bid (median)": "38530",
+      "Keyword bid(USD)": "0.35",
+      "Top-of-search IS": "<5%",
+      "Impressions": "22354",
+      "Clicks": "292",
+      "CTR": "0.0131",
+      "Spend(USD)": "111.30",
+      "CPC(USD)": "0.38",
+      "Orders": "14",
+      "Sales(USD)": "334.46",
+      "ACOS": "0.3328",
+      "ROAS": "3.005",
+      "NTB orders": "",
+      "% of orders NTB": "",
+      "NTB sales(USD)": "0.00",
+      "% of sales NTB": ""
+    }
+  ],
+  "data_dictionary_length": 1319
+}
