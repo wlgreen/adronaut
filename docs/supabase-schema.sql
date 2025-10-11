@@ -18,24 +18,26 @@ CREATE TABLE artifacts (
   filename TEXT NOT NULL,
   mime TEXT NOT NULL,
   storage_url TEXT NOT NULL,
+  file_content TEXT,
+  file_size INTEGER,
   summary_json JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Analysis snapshots (feature extraction results)
 CREATE TABLE analysis_snapshots (
-  snapshot_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   project_id UUID REFERENCES projects(project_id) ON DELETE CASCADE,
-  result_json JSONB NOT NULL,
+  snapshot_data JSONB NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Strategy versions
-CREATE TABLE strategy_versions (
+-- Strategy versions (renamed to 'strategies' for backend alignment)
+CREATE TABLE strategies (
   strategy_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   project_id UUID REFERENCES projects(project_id) ON DELETE CASCADE,
   version INTEGER NOT NULL,
-  strategy_json JSONB NOT NULL,
+  strategy_data JSONB NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(project_id, version)
 );
@@ -43,17 +45,19 @@ CREATE TABLE strategy_versions (
 -- Active strategy per project
 CREATE TABLE strategy_active (
   project_id UUID PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,
-  strategy_id UUID REFERENCES strategy_versions(strategy_id) ON DELETE CASCADE
+  strategy_id UUID REFERENCES strategies(strategy_id) ON DELETE CASCADE
 );
 
 -- Strategy patches (proposed, approved, rejected, etc.)
 CREATE TABLE strategy_patches (
   patch_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   project_id UUID REFERENCES projects(project_id) ON DELETE CASCADE,
+  strategy_id UUID REFERENCES strategies(strategy_id) ON DELETE SET NULL,
   source TEXT CHECK (source IN ('insights', 'reflection', 'edited_llm')) NOT NULL,
   status TEXT CHECK (status IN ('proposed', 'approved', 'rejected', 'superseded')) DEFAULT 'proposed',
-  patch_json JSONB NOT NULL,
+  patch_data JSONB NOT NULL,
   justification TEXT NOT NULL,
+  annotations JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -95,13 +99,14 @@ CREATE TABLE step_events (
   run_id UUID NOT NULL,
   step_name TEXT NOT NULL,
   status TEXT CHECK (status IN ('started', 'completed', 'failed')) NOT NULL,
+  metadata JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Indexes for better performance
 CREATE INDEX idx_artifacts_project_id ON artifacts(project_id);
 CREATE INDEX idx_analysis_snapshots_project_id ON analysis_snapshots(project_id);
-CREATE INDEX idx_strategy_versions_project_id ON strategy_versions(project_id);
+CREATE INDEX idx_strategies_project_id ON strategies(project_id);
 CREATE INDEX idx_strategy_patches_project_id ON strategy_patches(project_id);
 CREATE INDEX idx_strategy_patches_status ON strategy_patches(status);
 CREATE INDEX idx_campaigns_project_id ON campaigns(project_id);
