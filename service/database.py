@@ -563,9 +563,10 @@ class Database:
         project_id: str,
         run_id: str,
         step_name: str,
-        status: str
+        status: str,
+        metadata: Optional[Dict[str, Any]] = None
     ):
-        """Log a workflow step event"""
+        """Log a workflow step event with optional metadata"""
         if not self.client:
             return
 
@@ -575,7 +576,8 @@ class Database:
                 "project_id": project_id,
                 "run_id": run_id,
                 "step_name": step_name,
-                "status": status
+                "status": status,
+                "metadata": self._serialize_json_data(metadata) if metadata else None
             }
 
             self.client.table("step_events").insert(event_data).execute()
