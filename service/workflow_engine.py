@@ -106,22 +106,25 @@ class WorkflowEngine:
                 workflow_result['metadata']['snapshot_id'] = snapshot_id
 
             # ================================================================
-            # STEP 2: INSIGHTS GENERATION
+            # STEP 2: INSIGHTS GENERATION (Predefined Directions)
             # ================================================================
             log("\n💡 STEP 2: INSIGHTS GENERATION", 'info')
-            log("🧠 Generating k=5 candidates, selecting top 3...", 'info')
 
+            # Generate insights using predefined directions
             insights_result = await self.orchestrator.generate_insights(features)
             workflow_result['insights_result'] = insights_result
 
             insights_list = insights_result.get('insights', [])
-            candidates_evaluated = insights_result.get('candidates_evaluated', 0)
+            directions_evaluated = insights_result.get('directions_evaluated', 0)
+            directions_filled = insights_result.get('directions_filled', 0)
+            coverage_rate = insights_result.get('coverage_rate', 0)
             selection_method = insights_result.get('selection_method', 'unknown')
 
-            log(f"✅ Insights generated", 'info')
-            log(f"   📊 Candidates evaluated: {candidates_evaluated}", 'info')
+            log(f"✅ Insights generated using predefined directions", 'info')
+            log(f"   📋 Directions evaluated: {directions_evaluated}", 'info')
+            log(f"   ✅ Directions filled: {directions_filled} ({coverage_rate:.1%} coverage)", 'info')
             log(f"   🎯 Selection method: {selection_method}", 'info')
-            log(f"   ✅ Top insights selected: {len(insights_list)}", 'info')
+            log(f"   📊 Insights returned: {len(insights_list)}", 'info')
 
             for i, insight in enumerate(insights_list, 1):
                 score = insight.get('impact_score', 0)

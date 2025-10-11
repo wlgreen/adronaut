@@ -479,8 +479,13 @@ class GeminiOrchestrator:
                 "recommendations": []
             }
 
-    async def generate_insights(self, features: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate k=5 insight candidates, score, and select top 3 (NO patch) with universal patterns"""
+    async def generate_insights(self, features: Dict[str, Any], top_k: int = None) -> Dict[str, Any]:
+        """Generate insights using predefined directions, filling only those supported by data
+
+        Args:
+            features: Extracted features from artifacts
+            top_k: Number of top insights to select (default: from NUM_INSIGHTS env var or all valid)
+        """
         try:
             from mechanics_cheat_sheet import UNIVERSAL_MECHANICS
             from insights_selector import (
@@ -489,8 +494,19 @@ class GeminiOrchestrator:
                 count_data_support_distribution,
                 calculate_insufficient_evidence_rate
             )
+            from insight_directions import (
+                INSIGHT_DIRECTIONS,
+                get_insight_directions_prompt,
+                filter_empty_insights,
+                get_direction_coverage
+            )
             from logging_metrics import LLMMetrics
             import uuid
+
+            # Get number of insights to return from env var or parameter (None = return all valid)
+            if top_k is None:
+                top_k_config = os.getenv('NUM_INSIGHTS', 'all')
+                top_k = None if top_k_config == 'all' else int(top_k_config)
 
             start_time = time.time()
             job_id = str(uuid.uuid4())
@@ -504,12 +520,19 @@ class GeminiOrchestrator:
             cost_metrics = ', '.join(available_metrics.get('cost', [])) if available_metrics.get('cost') else 'none detected'
             volume_metrics = ', '.join(available_metrics.get('volume', [])) if available_metrics.get('volume') else 'none detected'
 
-            logger.info(f"[JOB {job_id[:8]}] Generating insights using universal patterns")
+            logger.info(f"[JOB {job_id[:8]}] Generating insights using predefined directions")
             logger.info(f"   Primary dimension: {primary_dim}")
             logger.info(f"   Efficiency metrics: {efficiency_metrics}")
+            logger.info(f"   Total directions: {len(INSIGHT_DIRECTIONS)}")
+            logger.info(f"   Top k filter: {top_k if top_k else 'all valid insights'}")
+
+            # Get directions prompt
+            directions_section = get_insight_directions_prompt()
 
             prompt = f"""
 {UNIVERSAL_MECHANICS}
+
+{directions_section}
 
 As a Marketing Strategy Insights Expert, analyze features using UNIVERSAL patterns (platform-agnostic):
 
@@ -642,30 +665,46 @@ If you forget these, you will lose 2 points (penalty).
 
 NOTE: This example includes ALL 4 mandatory elements: "$500 budget cap" (budget), "14-day pilot" (timeline), "measure CTR and ROAS daily" (metrics), "pilot experiment" (learning keyword). This scores 77 points.
 
-Generate 5 insight candidates following universal patterns. Each MUST have:
-- ACTUAL {primary_dim} values from features (not "Segment X" but real IDs/names like "keyword: fanny pack men")
-- ACTUAL metric names from schema (use {efficiency_metrics}, {cost_metrics}, {volume_metrics})
+**OUTPUT FORMAT:**
+
+Return a JSON object with insights organized by direction ID. For each direction:
+- If you have supporting data: Fill in the complete insight structure (all 11 required fields)
+- If insufficient data: Use null or omit the direction
+- Can fill the same direction multiple times if applicable to different segments (use direction_id with suffix like "outlier_scaling_1", "outlier_scaling_2")
+
+Each filled insight MUST have:
+- ACTUAL {primary_dim} values from features (not "Segment X" but real IDs/names)
+- ACTUAL metric names from schema ({efficiency_metrics}, {cost_metrics}, {volume_metrics})
 - Specific numbers from features (not "high efficiency" but "6.99 actual_metric")
 - Concrete action steps with timelines
-- Expected effect ranges with ACTUAL metric names (not just "medium" but "15-25% improvement in actual_metric_name")
-- Specific evidence paths using actual schema: "features.segment_performance.by_{primary_dim}.actual_id.metrics.actual_metric"
+- Expected effect ranges with ACTUAL metric names
+- Specific evidence paths: "features.segment_performance.by_{primary_dim}.actual_id.metrics.actual_metric"
 - Tradeoff analysis in contrastive_reason
 
-**REMINDER FOR WEAK DATA INSIGHTS:**
-If data_support="weak", your proposed_action MUST include:
-1. A learning keyword (pilot/test/experiment/A/B/validate/trial)
-2. A budget cap (e.g., "$500 budget cap")
-3. A timeline (e.g., "14-day experiment")
+**WEAK DATA REMINDER:**
+If data_support="weak", proposed_action MUST include:
+1. Learning keyword (pilot/test/experiment/A/B/validate/trial)
+2. Budget cap (e.g., "$500 budget cap")
+3. Timeline (e.g., "14-day experiment")
 4. Success metrics (e.g., "measure CTR daily")
-
-Missing these = -2 point penalty. Including all 4 = +5 point bonus.
 
 Return JSON with:
 {{
-  "candidates": [... 5 insight objects ...]
+  "insights_by_direction": {{
+    "outlier_scaling": {{...insight object...}} or null,
+    "waste_elimination": {{...insight object...}} or null,
+    "audience_refinement": {{...insight object...}} or null,
+    "creative_optimization": null,
+    "channel_rebalancing": null,
+    "temporal_optimization": null,
+    "bidding_strategy": null,
+    "funnel_optimization": null,
+    "test_and_learn": {{...insight object...}} or null,
+    "concentration_play": null
+  }}
 }}
 
-DO NOT include a "patch" field. DO NOT speculate beyond what evidence supports.
+ONLY fill directions where data supports them. DO NOT speculate.
 """
 
             logger.info(f"📝 Insights prompt length: {len(prompt)} characters")
@@ -684,44 +723,61 @@ DO NOT include a "patch" field. DO NOT speculate beyond what evidence supports.
                     raise json.JSONDecodeError("No JSON content found", insights_text, 0)
 
                 result = json.loads(clean_json)
-                candidates = result.get('candidates', [])
+                insights_by_direction = result.get('insights_by_direction', {})
 
-                logger.info(f"📊 Received {len(candidates)} insight candidates")
+                logger.info(f"📊 Received insights for {len(insights_by_direction)} directions")
 
-                # Validate and select top 3
-                valid_candidates = [c for c in candidates if validate_insight_structure(c)]
-                logger.info(f"✅ {len(valid_candidates)}/{len(candidates)} candidates passed validation")
+                # Filter out null/empty insights
+                valid_insights = filter_empty_insights(insights_by_direction)
+                logger.info(f"✅ {len(valid_insights)} directions have valid insights")
 
-                if len(valid_candidates) < 3:
-                    logger.warning(f"⚠️ Only {len(valid_candidates)} valid candidates, expected ≥3")
+                # Validate structure for each insight
+                validated_insights = [i for i in valid_insights if validate_insight_structure(i)]
+                logger.info(f"✅ {len(validated_insights)}/{len(valid_insights)} insights passed validation")
 
-                top_3 = select_top_insights(valid_candidates, k=3)
-                logger.info(f"🎯 Selected top 3 insights with scores: {[i['impact_score'] for i in top_3]}")
+                # Get direction coverage stats
+                coverage = get_direction_coverage(validated_insights)
+                logger.info(f"📊 Direction coverage: {coverage['filled_directions']}/{coverage['total_directions']} " +
+                           f"({coverage['coverage_rate']:.1%})")
+                logger.info(f"   Filled: {', '.join(coverage['filled_ids'])}")
+
+                # Score and rank insights
+                if top_k and len(validated_insights) > top_k:
+                    top_insights = select_top_insights(validated_insights, k=top_k)
+                    logger.info(f"🎯 Selected top {top_k} insights with scores: {[i['impact_score'] for i in top_insights]}")
+                else:
+                    # Return all valid insights, but still score them
+                    top_insights = select_top_insights(validated_insights, k=len(validated_insights))
+                    logger.info(f"🎯 Returning all {len(top_insights)} valid insights with scores: {[i['impact_score'] for i in top_insights]}")
 
                 # Calculate metrics for logging
                 latency_ms = int((time.time() - start_time) * 1000)
-                data_support_counts = count_data_support_distribution(top_3)
-                insufficient_rate = calculate_insufficient_evidence_rate(top_3)
+                data_support_counts = count_data_support_distribution(top_insights)
+                insufficient_rate = calculate_insufficient_evidence_rate(top_insights)
 
                 # Log metrics
                 LLMMetrics.log_insights_job(
                     job_id=job_id,
                     latency_ms=latency_ms,
                     temperature=TASK_TEMPERATURES['INSIGHTS'],
-                    candidate_count=len(candidates),
-                    selected_score=top_3[0]['impact_score'] if top_3 else 0,
-                    has_evidence_refs=any(len(i.get('evidence_refs', [])) > 0 for i in top_3),
+                    candidate_count=len(valid_insights),
+                    selected_score=top_insights[0]['impact_score'] if top_insights else 0,
+                    has_evidence_refs=any(len(i.get('evidence_refs', [])) > 0 for i in top_insights),
                     data_support_counts=data_support_counts,
                     insufficient_evidence_rate=insufficient_rate
                 )
 
-                logger.info("✅ Strategic insights generated successfully (NO patch)")
+                logger.info(f"✅ Strategic insights generated using predefined directions ({len(top_insights)} insights)")
 
                 # Return insights WITHOUT patch (breaking change from old flow)
                 return {
-                    'insights': top_3,
-                    'candidates_evaluated': len(candidates),
-                    'selection_method': 'deterministic_rubric'
+                    'insights': top_insights,
+                    'directions_evaluated': len(INSIGHT_DIRECTIONS),
+                    'directions_filled': coverage['filled_directions'],
+                    'insights_validated': len(validated_insights),
+                    'insights_selected': len(top_insights),
+                    'coverage_rate': coverage['coverage_rate'],
+                    'selection_method': 'predefined_directions_with_scoring'
                 }
 
             except json.JSONDecodeError as e:
