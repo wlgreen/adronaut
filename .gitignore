@@ -3,6 +3,9 @@ service/.env
 web/.env.local
 e2e-tests/.env.local
 
+# Claude Code settings (contains local permissions)
+.claude/settings.local.json
+
 # Python
 __pycache__/
 *.py[cod]
